@@ -999,20 +999,18 @@ void AagosWorld::InitFitnessEval() {
       for (size_t gene_id = 0; gene_id < num_genes; ++gene_id) {
         emp_assert(gene_id < gene_starts.size());
         const size_t gene_start = gene_starts[gene_id];
-        uint32_t gene_val = org.GetBits().GetUInt(gene_start) & gene_mask;
-        // const size_t tail_bits = num_bits - gene_start; // original?
-        const size_t tail_bits = org.GetBits().GetSize() - gene_start; // fix?
 
-        // If a gene runs off the end of the bitstring, loop around to the beginning.
-        if (tail_bits < gene_size) {
-          gene_val |= (org.GetBits().GetUInt(0) << tail_bits) & gene_mask;
-        }
+        // NOTE - Following could be optimized. Currently roughed in to patch Aagos
+        //        after breaking change in Empirical.
+        // TODO - test
+        // Isolate gene by rotating to front and resizing
+        emp::BitVector gene(org.GetBits().ROTATE(gene_start));
+        gene.resize(gene_size);
+
         // Compute fitness contribution of this gene
         // - Remember, we assume the first index of gene_starts maps to the first index of the target bitstring.
         emp_assert(gene_starts.size() == fitness_model_gradient->targets.size());
-        const emp::BitVector & target = fitness_model_gradient->GetTarget(gene_id);
-        emp::BitVector gene = emp::BitVector(gene_size);
-        gene.SetUIntAtBit(0, gene_val);
+        const emp::BitVector& target = fitness_model_gradient->GetTarget(gene_id);
         const double fitness_contribution = (double)target.EQU(gene).count() / (double)gene_size;
         phen.gene_fitness_contributions[gene_id] = fitness_contribution;
         fitness += fitness_contribution;
@@ -1043,14 +1041,18 @@ void AagosWorld::InitFitnessEval() {
         emp_assert(gene_id < gene_starts.size());
         const size_t gene_start = gene_starts[gene_id];
         emp_assert(gene_start < org.GetBits().GetSize(), gene_start, org.GetBits().GetSize());
-        uint32_t gene_val = org.GetBits().GetUInt(gene_start) & gene_mask;
-        // const size_t tail_bits = num_bits - gene_start; // original?
-        const size_t tail_bits = org.GetBits().GetSize() - gene_start; // fix?
+        // Isolate gene by rotating to front and resizing
+        emp::BitVector gene(org.GetBits().ROTATE(gene_start));
+        gene.resize(gene_size);
+        const uint32_t gene_val = gene.GetUInt(0);
+        // uint32_t gene_val = org.GetBits().GetUInt(gene_start) & gene_mask;
+        // // const size_t tail_bits = num_bits - gene_start; // original?
+        // const size_t tail_bits = org.GetBits().GetSize() - gene_start; // fix?
 
-        // If a gene runs off the end of the bitstring, loop around to the beginning.
-        if (tail_bits < gene_size) {
-          gene_val |= (org.GetBits().GetUInt(0) << tail_bits) & gene_mask;
-        }
+        // // If a gene runs off the end of the bitstring, loop around to the beginning.
+        // if (tail_bits < gene_size) {
+        //   gene_val |= (org.GetBits().GetUInt(0) << tail_bits) & gene_mask;
+        // }
         // Compute fitness contribution of this gene using nk landscape
         const double fitness_contribution = fitness_model_nk->GetLandscape().GetFitness(gene_id, gene_val);
         phen.gene_fitness_contributions[gene_id] = fitness_contribution;
