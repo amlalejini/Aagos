@@ -34,4 +34,5 @@ SegmentationFaultData/SegFaultRuns
 *.png
 
 Aagos.cfg
-output
+local/
+output/
