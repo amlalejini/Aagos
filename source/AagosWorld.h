@@ -3,7 +3,6 @@
 #ifndef AAGOS_WORLD_H
 #define AAGOS_WORLD_H
 
-#include "emp/Evolve/NK.hpp"
 #include "emp/Evolve/World.hpp"
 #include "emp/math/Distribution.hpp"
 #include "emp/math/math.hpp"
@@ -11,6 +10,7 @@
 #include "emp/math/stats.hpp"
 #include "emp/tools/string_utils.hpp"
 #include "emp/control/Signal.hpp"
+#include "emp/datastructs/set_utils.hpp"
 
 #include <sstream>
 #include <iostream>
@@ -21,6 +21,9 @@
 
 #include "AagosOrg.h"
 #include "AagosConfig.h"
+#include "NKLandscape.h"
+
+// using bits_vec_t = emp::old::BitVector;
 
 class AagosMutator {
 public:
@@ -353,6 +356,18 @@ public:
 };
 
 
+struct aagos_mut_landscape_info : public emp::datastruct::mut_landscape_info<AagosOrg::Phenotype> {
+  bool HasMutationType(const std::string& mut_type) const {
+    return emp::Has(mut_counts, mut_type);
+  }
+
+  int GetMutationCount(const std::string& mut_type) const {
+    emp_assert(HasMutationType(mut_type));
+    return mut_counts.at(mut_type);
+  }
+
+};
+
 class AagosWorld : public emp::World<AagosOrg> {
 public:
   // Convenience aliases
@@ -362,8 +377,7 @@ public:
   using genome_t = AagosOrg::Genome;
   using phenotype_t = AagosOrg::Phenotype;
   using mutator_t = AagosMutator;
-
-  using mut_landscape_t = emp::datastruct::mut_landscape_info<phenotype_t>;
+  using mut_landscape_t = aagos_mut_landscape_info;
   using systematics_t = emp::Systematics<org_t, genome_t, mut_landscape_t>;
   using taxon_t = typename systematics_t::taxon_t;
 
@@ -471,21 +485,21 @@ public:
   struct NKFitnessModel {
     size_t num_genes;
     size_t gene_size;
-    emp::NKLandscape landscape;
+    aagos::NKLandscape landscape;
 
-    NKFitnessModel(emp::Random & rand, size_t n_genes, size_t g_size)
+    NKFitnessModel(emp::Random& rand, size_t n_genes, size_t g_size)
       : num_genes(n_genes), gene_size(g_size)
     {
       landscape.Config(num_genes, gene_size-1, rand);
     }
 
-    emp::NKLandscape & GetLandscape() { return landscape; }
+    aagos::NKLandscape& GetLandscape() { return landscape; }
 
-    void RandomizeLandscapeBits(emp::Random & rand, size_t cnt) {
+    void RandomizeLandscapeBits(emp::Random& rand, size_t cnt) {
       landscape.RandomizeStates(rand, cnt);
     }
 
-    void PrintLandscape(std::ostream & out=std::cout) {
+    void PrintLandscape(std::ostream& out=std::cout) {
       out << emp::to_string(landscape.GetLandscape());
     }
 
@@ -984,13 +998,13 @@ void AagosWorld::InitFitnessEval() {
       for (size_t gene_id = 0; gene_id < num_genes; ++gene_id) {
         emp_assert(gene_id < gene_starts.size());
         const size_t gene_start = gene_starts[gene_id];
-        uint32_t gene_val = org.GetBits().GetUIntAtBit(gene_start) & gene_mask;
+        uint32_t gene_val = org.GetBits().GetUInt(gene_start) & gene_mask;
         // const size_t tail_bits = num_bits - gene_start; // original?
         const size_t tail_bits = org.GetBits().GetSize() - gene_start; // fix?
 
         // If a gene runs off the end of the bitstring, loop around to the beginning.
         if (tail_bits < gene_size) {
-          gene_val |= (org.GetBits().GetUIntAtBit(0) << tail_bits) & gene_mask;
+          gene_val |= (org.GetBits().GetUInt(0) << tail_bits) & gene_mask;
         }
         // Compute fitness contribution of this gene
         // - Remember, we assume the first index of gene_starts maps to the first index of the target bitstring.
@@ -1027,13 +1041,14 @@ void AagosWorld::InitFitnessEval() {
       for (size_t gene_id = 0; gene_id < num_genes; ++gene_id) {
         emp_assert(gene_id < gene_starts.size());
         const size_t gene_start = gene_starts[gene_id];
-        uint32_t gene_val = org.GetBits().GetUIntAtBit(gene_start) & gene_mask;
+        emp_assert(gene_start < org.GetBits().GetSize(), gene_start, org.GetBits().GetSize());
+        uint32_t gene_val = org.GetBits().GetUInt(gene_start) & gene_mask;
         // const size_t tail_bits = num_bits - gene_start; // original?
         const size_t tail_bits = org.GetBits().GetSize() - gene_start; // fix?
 
         // If a gene runs off the end of the bitstring, loop around to the beginning.
         if (tail_bits < gene_size) {
-          gene_val |= (org.GetBits().GetUIntAtBit(0) << tail_bits) & gene_mask;
+          gene_val |= (org.GetBits().GetUInt(0) << tail_bits) & gene_mask;
         }
         // Compute fitness contribution of this gene using nk landscape
         const double fitness_contribution = fitness_model_nk->GetLandscape().GetFitness(gene_id, gene_val);

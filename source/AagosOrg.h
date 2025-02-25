@@ -14,9 +14,9 @@ public:
 
   /// AagosOrg genomes comprise a bitsequence and the starting positions of each gene in the bitsequence.
   struct Genome {
-    size_t ancestral_id=0; ///< Only used for loaded genomes. Used to identify which loaded genome this genome descends from (when phylo tracking is off).
-    size_t gene_size; ///< size of each gene in the genome
-    size_t num_genes; ///< number of genes in the genome
+    size_t ancestral_id=0;            ///< Only used for loaded genomes. Used to identify which loaded genome this genome descends from (when phylo tracking is off).
+    size_t gene_size;                 ///< size of each gene in the genome
+    size_t num_genes;                 ///< number of genes in the genome
     emp::BitVector bits;              ///< Bit sequence
     emp::vector<size_t> gene_starts;  ///< Starting positions of all genes.
 
@@ -41,7 +41,7 @@ public:
     }
 
     // Randomize genome and gene starts
-    void Randomize(emp::Random & random) {
+    void Randomize(emp::Random& random) {
       emp::RandomizeBitVector(bits, random);
       emp::RandomizeVector<size_t>(gene_starts, random, 0, bits.size());
     }
