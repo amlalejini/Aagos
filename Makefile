@@ -2,13 +2,13 @@
 PROJECT := Aagos
 # PROJECT := scratch
 PROJECT_TEST := AagosTests
-EMP_DIR := ../Empirical/include
+EMP_DIR := third-party/Empirical/include
 
 # Flags to use regardless of compiler
-CFLAGS_all := -Wall -Wno-unused-function -std=c++17 -I$(EMP_DIR)/
+CFLAGS_all := -Wall -Wno-unused-function -std=c++20 -I$(EMP_DIR)/
 
 # Native compiler information
-CXX_nat := g++-9
+CXX_nat := g++-14
 CFLAGS_nat := -O3 -DNDEBUG $(CFLAGS_all) -msse4.2
 CFLAGS_nat_debug := -g -pedantic -DEMP_TRACK_MEM  -Wnon-virtual-dtor -Wcast-align -Woverloaded-virtual -Wconversion $(CFLAGS_all)
 CFLAGS_nat_profile := -O3 -DNDEBUG $(CFLAGS_all) -pg
