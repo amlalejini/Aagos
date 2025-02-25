@@ -3,6 +3,10 @@
 #ifndef AAGOS_WORLD_H
 #define AAGOS_WORLD_H
 
+#include "AagosOrg.hpp"
+#include "AagosConfig.hpp"
+#include "NKLandscape.hpp"
+
 #include "emp/Evolve/World.hpp"
 #include "emp/math/Distribution.hpp"
 #include "emp/math/math.hpp"
@@ -19,9 +23,6 @@
 #include <sys/stat.h>
 #include <unordered_map>
 
-#include "AagosOrg.h"
-#include "AagosConfig.h"
-#include "NKLandscape.h"
 
 // using bits_vec_t = emp::old::BitVector;
 

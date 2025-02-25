@@ -6,6 +6,10 @@
  * - [ ] add 'phenotype evaluated flag' => use for tooltips instead of current horrible implementation
 */
 
+#include "AagosWorld.hpp"
+#include "AagosConfig.hpp"
+#include "AagosOrg.hpp"
+#include "AagosPopulationVisualization.hpp"
 
 #include "emp/web/web.hpp"
 #include "emp/web/Input.hpp"
@@ -15,10 +19,6 @@
 #include <unordered_map>
 #include <sstream>
 
-#include "AagosWorld.h"
-#include "AagosConfig.h"
-#include "AagosOrg.h"
-#include "AagosPopulationVisualization.h"
 
 namespace UI = emp::web;
 

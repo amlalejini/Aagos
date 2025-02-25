@@ -1,11 +1,11 @@
 #ifndef AAGOS_WEB_POP_VIS_H
 #define AAGOS_WEB_POP_VIS_H
 
-#include "emp/web/web.hpp"
+#include "AagosWorld.hpp"
+#include "AagosConfig.hpp"
+#include "AagosOrg.hpp"
 
-#include "AagosWorld.h"
-#include "AagosConfig.h"
-#include "AagosOrg.h"
+#include "emp/web/web.hpp"
 
 namespace UI = emp::web;
 

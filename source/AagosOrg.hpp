@@ -1,13 +1,14 @@
 #ifndef AAGOS_ORG_H
 #define AAGOS_ORG_H
 
-#include <algorithm>
-#include <unordered_map>
 #include "emp/bits/BitVector.hpp"
 #include "emp/math/Random.hpp"
 #include "emp/math/random_utils.hpp"
 #include "emp/tools/string_utils.hpp"
 #include "emp/data/DataNode.hpp"
+
+#include <algorithm>
+#include <unordered_map>
 
 class AagosOrg {
 public:

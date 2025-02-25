@@ -4,9 +4,9 @@
 #include "emp/config/ArgManager.hpp"
 #include "emp/config/command_line.hpp"
 
-#include "../AagosConfig.h"
-#include "../AagosOrg.h"
-#include "../AagosWorld.h"
+#include "../AagosConfig.hpp"
+#include "../AagosOrg.hpp"
+#include "../AagosWorld.hpp"
 
 int main(int argc, char* argv[])
 {
