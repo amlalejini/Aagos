@@ -32,3 +32,5 @@ SegmentationFaultData/SegFaultRuns
 
 # Ignore images
 *.png
+
+Aagos.cfg
