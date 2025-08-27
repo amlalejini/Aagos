@@ -367,9 +367,14 @@ void AagosWorld::ActivateEvoPhaseTwo() {
   emp_assert(mutator != nullptr);
   mutator.Delete();
   std::cout << "  Constructing mutator..." << std::endl;
-  mutator = emp::NewPtr<AagosMutator>(config.NUM_GENES(), emp::Range<size_t>(config.MIN_SIZE(), config.MAX_SIZE()),
-                                      CUR_GENE_MOVE_PROB, CUR_BIT_FLIP_PROB,
-                                      CUR_BIT_INS_PROB, CUR_BIT_DEL_PROB);
+  mutator = emp::NewPtr<AagosMutator>(
+    config.NUM_GENES(),
+    emp::Range<size_t>(config.MIN_SIZE(), config.MAX_SIZE()),
+    CUR_GENE_MOVE_PROB,
+    CUR_BIT_FLIP_PROB,
+    CUR_BIT_INS_PROB,
+    CUR_BIT_DEL_PROB
+  );
   std::cout << "    ...done constructing mutator." << std::endl;
 
   if (config.PHASE_2_LOAD_ENV_FROM_FILE()) {
@@ -383,8 +388,6 @@ void AagosWorld::ActivateEvoPhaseTwo() {
     // Randomize the environment.
     randomize_environment();
   }
-
-
   ++cur_phase;
 }
 
