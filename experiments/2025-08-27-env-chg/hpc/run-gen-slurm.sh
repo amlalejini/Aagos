@@ -19,6 +19,8 @@ CONFIG_DIR=${HOME_EXP_DIR}/hpc/config
 
 # (1) Activate appropriate Python virtual environment
 source ${REPO_DIR}/hpc-env/clipper-hpc-env.sh
+source ${REPO_DIR}/pyenv/bin/activate
+
 # (2) Generate slurm script
 #   - This will generate an events file for each run
 python3 gen-slurm.py \
