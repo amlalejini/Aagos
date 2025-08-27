@@ -3,6 +3,7 @@ Aagos
 *.json
 *.gitignore
 *.csv
+.DS_Store
 
 # Ignore python virtual environment
 pyenv/
