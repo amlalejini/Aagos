@@ -4,8 +4,11 @@ Aagos
 *.gitignore
 *.csv
 
+# Ignore python virtual environment
+pyenv/
+
 # Ignore text files
-*.txt
+log.txt
 # Ignore launch files for hpcc created for testing purposes
 *.qsub
 
