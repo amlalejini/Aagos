@@ -8,6 +8,8 @@ Aagos
 # Ignore python virtual environment
 pyenv/
 
+__pycache__
+
 # Ignore text files
 log.txt
 # Ignore launch files for hpcc created for testing purposes
