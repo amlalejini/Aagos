@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 
 REPLICATES=100
-EXP_SLUG=2025-08-27-example
-SEED_OFFSET=10000
+EXP_SLUG=2025-08-27-env-chg
+SEED_OFFSET=100000
 JOB_TIME=8:00:00
 JOB_MEM=8G
 PROJECT_NAME=Aagos
 RUNS_PER_SUBDIR=950
-USERNAME=lalejina
+USERNAME=lalejina # <-- CHANGE THIS TO YOUR OWN ACCOUNT USERNAME!
 
-REPO_DIR=/Users/lalejina/devo_ws/${PROJECT_NAME}
+REPO_DIR=/mnt/home/${USERNAME}/devo_ws/${PROJECT_NAME} # <-- CHANGE THIS to where ever you have this repository stored on your account
+REPO_SCRIPTS_DIR=${REPO_DIR}/scripts
 HOME_EXP_DIR=${REPO_DIR}/experiments/${EXP_SLUG}
 
-DATA_DIR=${HOME_EXP_DIR}/hpc/test/data
-JOB_DIR=${HOME_EXP_DIR}/hpc/test/jobs
+DATA_DIR=/mnt/projects/${USERNAME}_project/${PROJECT_NAME}/${EXP_SLUG}
+JOB_DIR=${DATA_DIR}/jobs
 CONFIG_DIR=${HOME_EXP_DIR}/hpc/config
 
 # (1) Activate appropriate Python virtual environment
-source ${REPO_DIR}/pyenv/bin/activate
-
+source ${REPO_DIR}/hpc-env/clipper-hpc-env.sh
 # (2) Generate slurm script
 #   - This will generate an events file for each run
 python3 gen-slurm.py \
