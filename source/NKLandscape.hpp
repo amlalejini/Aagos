@@ -5,7 +5,8 @@
 #include "emp/base/assert.hpp"
 #include "emp/math/Random.hpp"
 #include "emp/math/math.hpp"
-#include "emp/bits/BitVector.hpp"
+// #include "emp/bits/BitVector.hpp"
+#include "emp/bits/Bits.hpp"
 
 /*
   NOTE: This class is adapted from the NKLandscape class in the Empirical library
@@ -48,7 +49,7 @@ class NKLandscape {
     /// N is the length of bitstrings in your population, K is the number of neighboring sites
     /// the affect the fitness contribution of each site (i.e. epistasis or ruggedness), random
     /// is the random number generator to use to generate this landscape.
-    NKLandscape(size_t _N, size_t _K, emp::Random & random)
+    NKLandscape(size_t _N, size_t _K, emp::Random& random)
       : N(_N), K(_K)
       , state_count(emp::IntPow<size_t>(2,K+1))
       , total_count(N * state_count)
@@ -104,7 +105,7 @@ class NKLandscape {
     }
 
     /// Get the fitness of a whole  bitstring
-    double GetFitness( std::vector<size_t> states ) const {
+    double GetFitness(const std::vector<size_t>& states) const {
       emp_assert(states.size() == N);
       double total = landscape[0][states[0]];
       for (size_t i = 1; i < N; i++) total += GetFitness(i,states[i]);

@@ -3,6 +3,8 @@
 
 #include "emp/config/config.hpp"
 
+namespace aagos {
+
 EMP_BUILD_CONFIG(AagosConfig,
   GROUP(WORLD_STRUCTURE, "How should each organism's genome be setup?"),
     VALUE(CHANGE_MAGNITUDE, size_t, 0, "How many changes to fitness tables each generation?"),
@@ -53,4 +55,5 @@ EMP_BUILD_CONFIG(AagosConfig,
     VALUE(DATA_FILEPATH, std::string, "./output/", "what directory should all data files be written to?")
 )
 
+}
 #endif

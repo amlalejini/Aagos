@@ -6,6 +6,10 @@
 #include "AagosOrg.hpp"
 #include "AagosConfig.hpp"
 #include "NKLandscape.hpp"
+#include "AagosMutator.hpp"
+#include "AagosMutLandscapeInfo.hpp"
+#include "GradientFitnessModel.hpp"
+#include "NKFitnessModel.hpp"
 
 #include "emp/Evolve/World.hpp"
 #include "emp/math/Distribution.hpp"
@@ -15,6 +19,8 @@
 #include "emp/tools/string_utils.hpp"
 #include "emp/control/Signal.hpp"
 #include "emp/datastructs/set_utils.hpp"
+
+// #include "emp/bits/Bits.hpp"
 
 #include <sstream>
 #include <iostream>
@@ -26,348 +32,7 @@
 
 // using bits_vec_t = emp::old::BitVector;
 
-class AagosMutator {
-public:
-  using genome_t = AagosOrg::Genome;
-  enum class MUTATION_TYPES {
-    BIT_FLIPS=0,
-    BIT_INSERTIONS,
-    BIT_DELETIONS,
-    GENE_MOVES,
-  };
-
-protected:
-  const size_t num_genes;
-  const emp::Range<size_t> genome_size_constraints;
-  const double prob_gene_moves;
-  const double prob_bit_flip;
-  const double prob_bit_ins;
-  const double prob_bit_del;
-
-  // Used for mutation?
-  emp::Binomial gene_moves_binomial;
-  emp::vector<emp::Binomial> bit_flips_binomials;
-  emp::vector<emp::Binomial> inserts_binomials;
-  emp::vector<emp::Binomial> deletes_binomials;
-
-  // Mutation tracking
-  std::unordered_map<MUTATION_TYPES, int> last_mutation_tracker;
-
-public:
-  AagosMutator(size_t n_genes, const emp::Range<size_t> & genome_size,
-               double p_gene_moves, double p_bit_flip, double p_bit_ins, double p_bit_del)
-    : num_genes(n_genes),
-      genome_size_constraints(genome_size),
-      prob_gene_moves(p_gene_moves),
-      prob_bit_flip(p_bit_flip),
-      prob_bit_ins(p_bit_ins),
-      prob_bit_del(p_bit_del),
-      gene_moves_binomial(prob_gene_moves, num_genes)
-  {
-    for (size_t i = genome_size_constraints.GetLower(); i <= genome_size_constraints.GetUpper(); ++i) {
-      bit_flips_binomials.emplace_back(prob_bit_flip, i);
-      inserts_binomials.emplace_back(prob_bit_ins, i);
-      deletes_binomials.emplace_back(prob_bit_del, i);
-    }
-  }
-
-  /// Apply gene moves, single-bit substitutions, insertions, and deletions to org's genome.
-  size_t ApplyMutations(AagosOrg & org, emp::Random & random) {
-    const size_t min_genome_size = genome_size_constraints.GetLower();
-    const size_t max_genome_size = genome_size_constraints.GetUpper();
-    emp_assert(org.GetNumBits() >= min_genome_size, "Organism's genome exceeds mutator's genome size restrictions.");
-    emp_assert(org.GetNumBits() <= max_genome_size, "Organism's genome exceeds mutator's genome size restrictions.");
-
-    auto & genome = org.GetGenome();
-    size_t bin_array_offset = org.GetNumBits() - min_genome_size; // offset is num bits - min size of genome
-    // Do gene moves
-    const size_t num_moves = gene_moves_binomial.PickRandom(random);
-    for (size_t m = 0; m < num_moves; ++m) {
-      const size_t gene_id = random.GetUInt(0, num_genes);                 // Pick a random gene
-      genome.gene_starts[gene_id] = random.GetUInt(genome.bits.GetSize()); // Pick a random new location
-    }
-    last_mutation_tracker[MUTATION_TYPES::GENE_MOVES] = (int)num_moves;
-
-    // Do bit flips
-    const size_t num_flips = bit_flips_binomials[bin_array_offset].PickRandom(random);
-    for (size_t m = 0; m < num_flips; ++m) {
-      const size_t pos = random.GetUInt(genome.bits.GetSize());
-      genome.bits[pos] ^= 1;
-    }
-    last_mutation_tracker[MUTATION_TYPES::BIT_FLIPS] = (int)num_flips;
-
-    // Do insertions and deletions.
-    int num_insert = (int)inserts_binomials[bin_array_offset].PickRandom(random);
-    int num_delete = (int)deletes_binomials[bin_array_offset].PickRandom(random);
-    const int proj_size = (int)genome.bits.GetSize() + num_insert - num_delete;
-    // Check gene size is within range.
-    if (proj_size > (int)max_genome_size) {
-      num_insert -= (proj_size - (int)max_genome_size);
-    } else if (proj_size < (int)min_genome_size) {
-      num_delete -= ((int)min_genome_size - proj_size);
-    }
-    // Assert that we'll be in size limitations.
-    emp_assert((int)genome.bits.GetSize() + num_insert - num_delete >= (int)min_genome_size);
-    emp_assert((int)genome.bits.GetSize() + num_insert - num_delete <= (int)max_genome_size);
-    // Do insertions
-    for (int i = 0; i < num_insert; ++i) {
-      const size_t pos = random.GetUInt(org.GetNumBits()); // Figure out the position for insertion.
-      genome.bits.Resize(genome.bits.GetSize() + 1);       // Increase genome size to make room for insertion.
-      emp::BitVector mask(pos, 1);                         // Setup a mask to perserve early bits.
-      mask.Resize(genome.bits.GetSize());                     // Align mask size.
-      // Now build the new string!
-      genome.bits = (mask & genome.bits) | ((genome.bits << 1) & ~mask);
-      genome.bits[pos] = random.P(0.5); // Randomize the new bit.
-      // Shift any genes that started at pos or later.
-      for (auto & x : genome.gene_starts) {
-        x += ((size_t)x >= pos);
-      }
-    }
-    // Do deletions
-    for (int i = 0; i < num_delete; ++i) {
-      size_t pos = random.GetUInt(org.GetNumBits());
-      emp::BitVector mask(pos, 1);
-      mask.Resize(genome.bits.GetSize());
-      genome.bits = (mask & genome.bits) | ((genome.bits >> 1) & ~mask);  // Build the new string!
-      genome.bits.Resize(genome.bits.GetSize() - 1);                      // Decrease the size to account for deletion
-      // Shift any genes that started at pos or later.
-      if (pos == 0) {
-        pos = 1; // Adjust position if beginning was deleted (don't want to subtract 1 if gene start = 0)
-      }
-      for (auto & x : genome.gene_starts) {
-        x -= ((size_t)x >= pos);
-      }
-    }
-    last_mutation_tracker[MUTATION_TYPES::BIT_INSERTIONS] = num_insert;
-    last_mutation_tracker[MUTATION_TYPES::BIT_DELETIONS] = num_delete;
-
-    // Compute number of mutations, update organism's mutation-related tracking.
-    const int num_muts = (int)num_moves + (int)num_flips + num_insert + num_delete;
-    emp_assert(num_muts >= 0);
-    if (num_muts > 0) {
-      org.ResetHistogram();
-    }
-    return (size_t)num_muts;
-  }
-
-  /// Control mutation function. Instead of applying mutations at a per-site rate, apply bit mutations
-  /// (i.e., substitutions, insertions, deletions) at a per-gene-per-site rate. This should eliminate
-  /// reduced mutational load for compact genetic architectures.
-  size_t ApplyMutationsPerGenePerSite(AagosOrg & org, emp::Random & random) {
-    const size_t min_genome_size = genome_size_constraints.GetLower();
-    const size_t max_genome_size = genome_size_constraints.GetUpper();
-    emp_assert(org.GetNumBits() >= min_genome_size, "Organism's genome exceeds mutator's genome size restrictions.");
-    emp_assert(org.GetNumBits() <= max_genome_size, "Organism's genome exceeds mutator's genome size restrictions.");
-
-    // This has to be a little more complicated (and less efficient) to take gene occupancy into account when mutating
-
-    genome_t & genome = org.GetGenome();
-    // std::cout << "===== Mutation =====" << std::endl;
-    // std::cout << "Original (size="<<org.GetGenome().GetNumBits()<<"): ";
-    // org.Print(); //
-    // std::cout << std::endl;
-
-    // Do gene moves (directly on genome)
-    const size_t num_moves = gene_moves_binomial.PickRandom(random);
-    for (size_t m = 0; m < num_moves; ++m) {
-      const size_t gene_id = random.GetUInt(0, num_genes);                 // Pick a random gene
-      // std::cout << "  > moving " << gene_id << std::endl;
-      genome.gene_starts[gene_id] = random.GetUInt(genome.bits.GetSize()); // Pick a random new location
-    }
-    last_mutation_tracker[MUTATION_TYPES::GENE_MOVES] = (int)num_moves;
-
-    // std::cout << "Moves: " << num_moves << std::endl;
-    // std::cout << "After moves: "; org.Print();
-    // std::cout << std::endl;
-
-    // Build position occupancy map to modify probability of per-site mutations
-    const size_t num_genes = genome.num_genes;
-    const size_t gene_size = genome.GetGeneSize();
-    const size_t genome_size = genome.GetNumBits();
-
-    // Compute gene positions, count occupants per site
-    // emp::vector<std::unordered_set> gene_positions(num_genes, {});
-    emp::vector<size_t> position_occupants(genome_size, 0);
-    for (size_t gene_id = 0; gene_id < num_genes; ++gene_id) {
-      const size_t start_pos = genome.gene_starts[gene_id];
-      for (size_t pos = start_pos; pos < start_pos + gene_size; ++pos) {
-        // gene_positions[gene_id].emplace(pos % genome_size);
-        ++position_occupants[pos % genome_size];
-      }
-    }
-    // std::cout << "Position occupant map: " << position_occupants << std::endl;
-
-    // Do bit flips (directly on genome)
-    int num_flips = 0;
-    for (size_t pos = 0; pos < genome.GetNumBits(); ++pos) {
-      const size_t num_occupants = position_occupants[pos];
-      bool mutate_bit = random.P(prob_bit_flip); // Apply probability of mutation.
-      // for each occupant above the first, apply probability of mutation
-      if (num_occupants > 1 && !mutate_bit) {
-        for (size_t g = 1; (g < num_occupants) && !mutate_bit; ++g) {
-          mutate_bit = random.P(prob_bit_flip);
-        }
-      }
-      if (mutate_bit) {
-        genome.bits[pos] ^= 1;
-        ++num_flips;
-      }
-    }
-    last_mutation_tracker[MUTATION_TYPES::BIT_FLIPS] = num_flips;
-    // std::cout << "Bit flips: " << num_flips << std::endl;
-    // std::cout << "After flips: ";
-    // org.Print();
-    // std::cout << std::endl;
-
-    // Do insertions and deletions (build new genome as we go to maintain accuracy of position_occupants)
-    int num_insertions = 0;
-    int num_deletions = 0;
-    // const size_t start_from = random.GetUInt(genome.GetNumBits()); // Randomize where we start to eliminate
-    //                                                                // potential bias in stability of beginning vs end of genome.
-    genome_t new_genome(genome);
-    new_genome.bits.Resize(genome.GetNumBits() * 2); // Max possible genome growth.
-    new_genome.bits.Clear();                    // Reset all bits to 0
-
-    // std::cout << "Making a blank tape (size="<<new_genome.bits.size()<<"): ";
-    // new_genome.bits.Print();
-    // std::cout << std::endl;
-    // std::cout << "blank tape gene starts: " << new_genome.gene_starts << std::endl;
-
-    int write_offset=0; // How much do we offset our writes?
-    size_t new_size = genome_size;
-    // std::cout << "--insertion/deletions--" << std::endl;
-    for (size_t pos = 0; pos < genome_size; ++pos) {
-      // std::cout << "pos=" << pos << "; write_offset=" << write_offset << "; new size=" << new_size << std::endl;
-      const size_t num_occupants = position_occupants[pos];
-
-      // Do we insert?
-      bool do_insertion=random.P(prob_bit_ins); // Apply probability of mutation.
-      // for each occupant above the first, apply probability of mutation
-      for (size_t g = 1; (g < num_occupants) && !do_insertion; ++g) {
-        do_insertion = random.P(prob_bit_ins);
-      }
-      // Do we delete?
-      bool do_deletion=random.P(prob_bit_del);
-      // for each occupant above the first, apply probability of mutation
-      for (size_t g = 1; (g < num_occupants) && !do_deletion; ++g) {
-        do_deletion = random.P(prob_bit_del);
-      }
-
-      // std::cout << "  do insertion? " << do_insertion << std::endl;
-      // std::cout << "  do deletion? " << do_deletion << std::endl;
-
-      // Do we (1) insert + delete, (2) insert, (3) delete, (4) do nothing
-      if (do_insertion && do_deletion) {
-        // std::cout << "  > do ins+del" << std::endl;
-        // net effect of deletion + insertion is to randomize the bit at this position
-        const int write_pos = ((int)pos + write_offset); // should never be negative because pos has to increase 1 for every possible write offset decrement
-        emp_assert(write_pos >= 0);
-        emp_assert(write_pos < (int)new_genome.bits.size());
-        // std::cout << "  > write pos = " << write_pos << std::endl;
-        new_genome.bits[write_pos] = random.P(0.5);
-        ++num_insertions;
-        ++num_deletions;
-      } else if (do_insertion && new_size < max_genome_size) {
-        // std::cout << "  > do ins" << std::endl;
-        const int write_pos = (int)pos + write_offset;
-        // std::cout << "  > write pos = " << write_pos << std::endl;
-        // insert random bit just before this bit
-        new_genome.bits[write_pos] = random.P(0.5);
-        // copy original bit
-        new_genome.bits[write_pos + 1] = genome.bits.Get(pos);
-        // Shift any genes that started at pos or later.
-        size_t base_pos=(int)pos + write_offset;
-        for (auto & x : new_genome.gene_starts) {
-          x += ((size_t)x >= base_pos);
-        }
-        ++write_offset;
-        ++num_insertions;
-        ++new_size;
-      } else if (do_deletion && new_size > min_genome_size) {
-        // std::cout << "  > do del" << std::endl;
-        // DON'T copy original bit
-        // todo - update gene start positions
-        // Shift any genes that started at pos or later.
-        size_t base_pos=(int)pos + write_offset;
-        if (base_pos==0) base_pos = 1;
-        for (auto & x : new_genome.gene_starts) {
-          x -= ((size_t)x >= base_pos);
-        }
-        ++num_deletions;
-        --write_offset; // decrement write head offset
-        --new_size;
-      } else {
-        // std::cout << "  > do copy over" << std::endl;
-        // copy original bit
-        const int write_pos = (int)pos + write_offset;
-        // std::cout << "  > write pos = " << write_pos << std::endl;
-        new_genome.bits[write_pos] = genome.bits.Get(pos);
-      }
-
-      // std::cout << "Updated tape: "; new_genome.bits.Print(); std::cout << std::endl;
-      // std::cout << "  updated gene starts: " << new_genome.gene_starts << std::endl;
-    }
-    emp_assert(new_size >= min_genome_size);
-    emp_assert(new_size <= max_genome_size);
-    last_mutation_tracker[MUTATION_TYPES::BIT_INSERTIONS] = num_insertions;
-    last_mutation_tracker[MUTATION_TYPES::BIT_DELETIONS] = num_deletions;
-
-    // resize new genome
-    emp_assert(new_size <= new_genome.bits.size());
-    // for (size_t i = 0; i < new_genome.gene_starts.size(); ++i) {
-    //   const size_t new_pos = new_genome.gene_starts[i];
-    //   const size_t old_pos = genome.gene_starts[i];
-    //   emp_assert(new_pos < new_size, genome_size, old_pos, num_insertions, num_deletions, new_pos, new_size);
-    // }
-    new_genome.bits.Resize(new_size);
-
-    // update organism genome with new genome w/insertions and deletions
-    org.GetGenome().bits.Resize(new_genome.bits.size());
-    emp_assert(org.GetGenome().gene_starts.size() == new_genome.gene_starts.size());
-    for (size_t i = 0; i < org.GetGenome().bits.size(); ++i) {
-      org.GetGenome().bits[i] = new_genome.bits.Get(i);
-    }
-    for (size_t i = 0; i < org.GetGenome().gene_starts.size(); ++i) {
-      org.GetGenome().gene_starts[i] = new_genome.gene_starts[i];
-    }
-
-    // std::cout << "Final mutated (size="<<org.GetGenome().GetNumBits()<<"): ";
-    // org.Print();
-    // std::cout << std::endl;
-    // std::cout << "  gene starts = " << org.GetGenome().gene_starts << std::endl;
-
-    // Compute number of mutations, update organism's mutation-related tracking.
-    const int num_muts = (int)num_moves + (int)num_flips + num_insertions + num_deletions;
-    emp_assert(num_muts >= 0);
-    if (num_muts > 0) {
-      org.ResetHistogram();
-    }
-    return (size_t)num_muts;
-  }
-
-  std::unordered_map<MUTATION_TYPES, int> & GetLastMutations() { return last_mutation_tracker; }
-
-  void ResetLastMutationTracker() {
-    last_mutation_tracker[MUTATION_TYPES::BIT_FLIPS] = 0;
-    last_mutation_tracker[MUTATION_TYPES::BIT_INSERTIONS] = 0;
-    last_mutation_tracker[MUTATION_TYPES::BIT_DELETIONS] = 0;
-    last_mutation_tracker[MUTATION_TYPES::GENE_MOVES] = 0;
-  }
-
-};
-
-
-struct aagos_mut_landscape_info : public emp::datastruct::mut_landscape_info<AagosOrg::Phenotype> {
-  bool HasMutationType(const std::string& mut_type) const {
-    return emp::Has(mut_counts, mut_type);
-  }
-
-  int GetMutationCount(const std::string& mut_type) const {
-    emp_assert(HasMutationType(mut_type));
-    return mut_counts.at(mut_type);
-  }
-
-};
+namespace aagos {
 
 class AagosWorld : public emp::World<AagosOrg> {
 public:
@@ -378,179 +43,9 @@ public:
   using genome_t = AagosOrg::Genome;
   using phenotype_t = AagosOrg::Phenotype;
   using mutator_t = AagosMutator;
-  using mut_landscape_t = aagos_mut_landscape_info;
+  using mut_landscape_t = AagosMutLandscapeInfo;
   using systematics_t = emp::Systematics<org_t, genome_t, mut_landscape_t>;
   using taxon_t = typename systematics_t::taxon_t;
-
-  // todo - make different fitness models derive from a base class that defines functions like randomize,
-  //        change, load_from_file, etc
-  /// Fitness model for gradient fitness evaluation
-  struct GradientFitnessModel {
-    size_t num_genes;
-    size_t gene_size;
-    emp::vector<emp::BitVector> targets;
-
-    GradientFitnessModel(emp::Random & rand, size_t n_genes, size_t g_size)
-      : num_genes(n_genes), gene_size(g_size)
-    {
-      for (size_t i = 0; i < num_genes; ++i) {
-        targets.emplace_back(emp::RandomBitVector(rand, gene_size));
-        emp_assert(targets.back().GetSize() == gene_size);
-      }
-      emp_assert(targets.size() == num_genes);
-    }
-
-    const emp::BitVector & GetTarget(size_t id) const { return targets[id]; }
-
-    /// Mutate a number of target bits equal to bit cnt.
-    void RandomizeTargetBits(emp::Random & rand, size_t bit_cnt) {
-      for (size_t i = 0; i < bit_cnt; ++i) {
-        // Select a random target sequence.
-        const size_t target_id = rand.GetUInt(targets.size());
-        emp::BitVector & target = targets[target_id];
-        const size_t target_pos = rand.GetUInt(target.GetSize());
-        target.Set(target_pos, !target.Get(target_pos));
-      }
-    }
-
-    /// Randomize a number of targets equal to cnt.
-    void RandomizeTargets(emp::Random & rand, size_t cnt) {
-      // Change a number of targets (= cnt).
-      emp::vector<size_t> target_ids(targets.size());
-      std::iota(target_ids.begin(), target_ids.end(), 0);
-      emp::Shuffle(rand, target_ids);
-      cnt = emp::Min(cnt, target_ids.size()); // No need to randomize more targets than exist.
-      for (size_t i = 0; i < cnt; ++i) {
-        // Select a random target sequence.
-        emp_assert(i < target_ids.size());
-        const size_t target_id = target_ids[i];
-        emp::BitVector & target = targets[target_id];
-        emp::RandomizeBitVector(target, rand);
-      }
-    }
-
-    void PrintTargets(std::ostream & out=std::cout) {
-      // lazily outsource to emp::to_string
-      out << emp::to_string(targets);
-    }
-
-    /// Load targets from file (specified by given path)
-    /// First non-commented line of file should give what emp::to_string would output.
-    ///  - [ bits bits bits bits ]
-    ///  - Loaded environment must be consistent with num_genes and gene_size
-    bool LoadTargets(const std::string & path) {
-      std::ifstream environment_fstream(path);
-      if (!environment_fstream.is_open()) {
-        std::cout << "Failed to open environment file (" << path << "). Exiting..." << std::endl;
-        exit(-1);
-      }
-      std::string cur_line;
-      emp::vector<std::string> line_components;
-      bool success = false;
-      while (!environment_fstream.eof()) {
-        std::getline(environment_fstream, cur_line);
-        emp::left_justify(cur_line); // Remove leading whitespace
-        if (cur_line == emp::empty_string()) continue; // Skip empty line.
-        else if (cur_line[0] == '#') continue; // Treat '#' as a commented line
-        else if (cur_line[0] == '[') {
-          // Attempt to read environments state.
-          emp::remove_chars(cur_line, "[]"); // Remove brackets
-          emp::left_justify(cur_line);       // Remove leading whitespace
-          emp::right_justify(cur_line);      // Remove trailing whitespace
-          line_components.clear();
-          emp::slice(cur_line, line_components, ' ');
-          // Each slice should be a gene target, check to make sure number of targets is correct.
-          if (line_components.size() != num_genes) return false;
-
-          for (size_t i = 0; i < line_components.size(); ++i) {
-            emp_assert(i < targets.size());
-            auto & target_str = line_components[i];
-            // Target string should be correct size.
-            if (target_str.size() != gene_size) return false;
-            for (size_t bit = 0; bit < target_str.size(); ++bit) {
-              emp_assert(bit < targets[i].GetSize());
-              // if (component == '1')
-              targets[i].Set(targets[i].GetSize() - bit - 1, target_str[bit] == '1');
-            }
-          }
-          success = true;
-          break;
-        }
-      }
-      return success;
-    }
-
-  };
-
-  /// Fitness model for NK fitness evaluation
-  struct NKFitnessModel {
-    size_t num_genes;
-    size_t gene_size;
-    aagos::NKLandscape landscape;
-
-    NKFitnessModel(emp::Random& rand, size_t n_genes, size_t g_size)
-      : num_genes(n_genes), gene_size(g_size)
-    {
-      landscape.Config(num_genes, gene_size-1, rand);
-    }
-
-    aagos::NKLandscape& GetLandscape() { return landscape; }
-
-    void RandomizeLandscapeBits(emp::Random& rand, size_t cnt) {
-      landscape.RandomizeStates(rand, cnt);
-    }
-
-    void PrintLandscape(std::ostream& out=std::cout) {
-      out << emp::to_string(landscape.GetLandscape());
-    }
-
-    /// Load NK landscape from file (specified by given path)
-    /// First non-commented line of file should give what emp::to_string would output.
-    ///  - [ [ fitness fitness fitness ... ] [ fitness fitness fitness ... ] ... ]
-    ///  - Loaded landscape must be consistent with num_genes and gene_size
-    bool LoadLandscape(const std::string & path) {
-      std::ifstream environment_fstream(path);
-      if (!environment_fstream.is_open()) {
-        std::cout << "Failed to open environment file (" << path << "). Exiting..." << std::endl;
-        exit(-1);
-      }
-      std::string cur_line;
-      emp::vector<std::string> line_components;
-      bool success = false;
-      while (!environment_fstream.eof()) {
-        std::getline(environment_fstream, cur_line);
-        emp::left_justify(cur_line); // Remove leading whitespace
-        if (cur_line == emp::empty_string()) continue; // Skip empty lines
-        else if (cur_line[0] == '#') continue; // Treat '#' as a commented line
-        else if (cur_line[0] == '[') {
-          // Attempt to read landscape state.
-          emp::remove_chars(cur_line, "["); // Remove opening brackets. Using closing brackets to delimit gene-associated states.
-          emp::left_justify(cur_line);
-          emp::right_justify(cur_line);
-          line_components.clear();
-          emp::slice(cur_line, line_components, ']');
-          // Last line component is blank space.
-          line_components.pop_back();
-          if (landscape.GetN() != line_components.size()) return false;
-          for (size_t n = 0; n < line_components.size(); ++n) {
-            std::string & values_str = line_components[n];
-            emp::vector<std::string> values;
-            emp::left_justify(values_str);
-            emp::right_justify(values_str);
-            emp::slice(values_str, values, ' ');
-            if (landscape.GetStateCount() != values.size()) return false;
-            for (size_t state = 0; state < values.size(); ++state) {
-              double value = emp::from_string<double>(values[state]);
-              landscape.SetState(n, state, value);
-            }
-          }
-          success = true;
-          break;
-        }
-      }
-      return success;
-    }
-  };
 
 protected:
   size_t TOTAL_GENS;
@@ -563,7 +58,7 @@ protected:
   double CUR_BIT_DEL_PROB;
   size_t cur_phase=0;
 
-  config_t & config;    ///< World configuration.
+  config_t& config;    ///< World configuration.
   std::string output_path;
   bool setup=false;
 
@@ -572,7 +67,7 @@ protected:
   std::function<void(org_t &)> evaluate_org;
   std::function<void()> change_environment;
   std::function<void()> randomize_environment;
-  std::function<bool(const std::string &)> load_environment_from_file;
+  std::function<bool(const std::string&)> load_environment_from_file;
 
   emp::Signal<void(size_t)> after_eval_sig; ///< Triggered after organism (ID given by size_t argument) evaluation.
 
@@ -581,8 +76,13 @@ protected:
   emp::Ptr<systematics_t> sys_ptr; ///< Shortcut pointer to the correctly-typed systematics manager.
                                    ///< NOTE: The base world class will be responsible for memory management.
 
-  // todo - data collection
-  emp::DataManager<double, emp::data::Log, emp::data::Stats, emp::data::Pull> manager;
+  // Data collection
+  emp::DataManager<
+    double,
+    emp::data::Log,
+    emp::data::Stats,
+    emp::data::Pull
+  > manager;
   emp::Ptr<emp::DataFile> gene_stats_file;
   emp::Ptr<emp::DataFile> representative_org_file;
   emp::Ptr<emp::DataFile> env_file;
@@ -591,7 +91,7 @@ protected:
   size_t most_fit_id;
 
   void InitFitnessEval();
-  void InitEnvironment(); // todo - test environment change
+  void InitEnvironment();
   void InitPop();
   void InitPopRandom();
   void InitPopLoad();
@@ -609,9 +109,9 @@ protected:
   // TODO - setup environment tracking file?
 
   /// Shortcut for computing organism's coding sites.
-  size_t ComputeCodingSites(org_t & org) {
+  size_t ComputeCodingSites(org_t& org) {
     size_t count = 0;
-    const emp::vector<size_t> & bins = org.GetGeneOccupancyHistogram().GetHistCounts();
+    const emp::vector<size_t>& bins = org.GetGeneOccupancyHistogram().GetHistCounts();
     for (size_t i = 1; i < bins.size(); ++i) {
       count += bins[i];
     }
@@ -624,8 +124,7 @@ protected:
   }
 
 public:
-  // AagosWorld(emp::Random & random, config_t & cfg) : base_t(random), config(cfg) { Setup(); }
-  AagosWorld(config_t & cfg) : config(cfg) { }
+  AagosWorld(config_t& cfg) : config(cfg) { }
 
   ~AagosWorld() {
     if (config.GRADIENT_MODEL()) fitness_model_gradient.Delete();
@@ -649,10 +148,17 @@ public:
 
   size_t GetMostFitID() const { return most_fit_id; }
   bool IsSetup() const { return setup; }
-  const config_t & GetConfig() const { return config; }
+  const config_t& GetConfig() const { return config; }
 
-  const NKFitnessModel & GetNKFitnessModel() const { emp_assert(!config.GRADIENT_MODEL()); return *fitness_model_nk; }
-  const GradientFitnessModel & GetGradientFitnessModel() const { emp_assert(config.GRADIENT_MODEL()); return *fitness_model_gradient; }
+  const NKFitnessModel& GetNKFitnessModel() const {
+    emp_assert(!config.GRADIENT_MODEL());
+    return *fitness_model_nk;
+  }
+
+  const GradientFitnessModel& GetGradientFitnessModel() const {
+    emp_assert(config.GRADIENT_MODEL());
+    return *fitness_model_gradient;
+  }
 
 };
 
@@ -702,7 +208,9 @@ void AagosWorld::RunStep(bool auto_advance/*=true*/) {
   if (config.SNAPSHOT_INTERVAL()) {
     if ( !(u % config.SNAPSHOT_INTERVAL()) || (u == config.MAX_GENS()) ||  (u == TOTAL_GENS) ) {
       DoPopulationSnapshot();
-      if (u && config.PHYLOGENY_TRACKING()) sys_ptr->Snapshot(output_path + "phylo_" + emp::to_string(u) + ".csv"); // Don't snapshot phylo at update 0
+      if (u && config.PHYLOGENY_TRACKING()) {
+        sys_ptr->Snapshot(output_path + "phylo_" + emp::to_string(u) + ".csv"); // Don't snapshot phylo at update 0
+      }
       env_file->Update();
     }
   }
@@ -715,10 +223,9 @@ void AagosWorld::RunStep(bool auto_advance/*=true*/) {
 
 void AagosWorld::AdvanceWorld() {
   // Should the environment change?
-  if (CUR_CHANGE_FREQUENCY) {
-    if (!(GetUpdate() % CUR_CHANGE_FREQUENCY)) {
-      change_environment();
-    }
+  const bool change_env = (CUR_CHANGE_FREQUENCY > 0) && !(GetUpdate() % CUR_CHANGE_FREQUENCY);
+  if (change_env) {
+    change_environment();
   }
   Update();
   ClearCache();
@@ -768,21 +275,26 @@ void AagosWorld::Setup() {
   // Configure mutator
   std::cout << "Constructing mutator..." << std::endl;
   if (mutator != nullptr) mutator.Delete();
-  mutator = emp::NewPtr<AagosMutator>(config.NUM_GENES(), emp::Range<size_t>(config.MIN_SIZE(), config.MAX_SIZE()),
-                                      CUR_GENE_MOVE_PROB, CUR_BIT_FLIP_PROB,
-                                      CUR_BIT_INS_PROB, CUR_BIT_DEL_PROB);
+  mutator = emp::NewPtr<AagosMutator>(
+    config.NUM_GENES(),
+    emp::Range<size_t>(config.MIN_SIZE(), config.MAX_SIZE()),
+    CUR_GENE_MOVE_PROB,
+    CUR_BIT_FLIP_PROB,
+    CUR_BIT_INS_PROB,
+    CUR_BIT_DEL_PROB
+  );
   std::cout << "  ...done constructing mutator." << std::endl;
   // TODO - should we cut the mutation tracking information if not tracking phylogenies?
 
   if (config.APPLY_BIT_MUTS_PER_GENE()) {
-    SetMutFun([this](org_t & org, emp::Random & rnd) {
+    SetMutFun([this](org_t& org, emp::Random& rnd) {
       // NOTE - here's where we would intercept mutation-type distributions (with some extra infrastructure
       //        built into the mutator)!
       org.ResetMutations();
       mutator->ResetLastMutationTracker();
       const size_t mut_cnt = mutator->ApplyMutationsPerGenePerSite(org, rnd);
-      auto & mut_dist = mutator->GetLastMutations();
-      auto & org_mut_tracker = org.GetMutations();
+      auto& mut_dist = mutator->GetLastMutations();
+      auto& org_mut_tracker = org.GetMutations();
       org_mut_tracker["bit_flips"] = mut_dist[mutator_t::MUTATION_TYPES::BIT_FLIPS];
       org_mut_tracker["bit_insertions"] = mut_dist[mutator_t::MUTATION_TYPES::BIT_INSERTIONS];
       org_mut_tracker["bit_deletions"] = mut_dist[mutator_t::MUTATION_TYPES::BIT_DELETIONS];
@@ -790,14 +302,14 @@ void AagosWorld::Setup() {
       return mut_cnt;
     });
   } else {
-    SetMutFun([this](org_t & org, emp::Random & rnd) {
+    SetMutFun([this](org_t& org, emp::Random& rnd) {
       // NOTE - here's where we would intercept mutation-type distributions (with some extra infrastructure
       //        built into the mutator)!
       org.ResetMutations();
       mutator->ResetLastMutationTracker();
       const size_t mut_cnt = mutator->ApplyMutations(org, rnd);
-      auto & mut_dist = mutator->GetLastMutations();
-      auto & org_mut_tracker = org.GetMutations();
+      auto& mut_dist = mutator->GetLastMutations();
+      auto& org_mut_tracker = org.GetMutations();
       org_mut_tracker["bit_flips"] = mut_dist[mutator_t::MUTATION_TYPES::BIT_FLIPS];
       org_mut_tracker["bit_insertions"] = mut_dist[mutator_t::MUTATION_TYPES::BIT_INSERTIONS];
       org_mut_tracker["bit_deletions"] = mut_dist[mutator_t::MUTATION_TYPES::BIT_DELETIONS];
@@ -974,7 +486,11 @@ void AagosWorld::InitFitnessEval() {
   if (config.GRADIENT_MODEL()) {
     std::cout << "Initializing gradient model of fitness." << std::endl;
     if (fitness_model_gradient != nullptr) fitness_model_gradient.Delete();
-    fitness_model_gradient = emp::NewPtr<GradientFitnessModel>(*random_ptr, config.NUM_GENES(), config.GENE_SIZE());
+    fitness_model_gradient = emp::NewPtr<GradientFitnessModel>(
+      *random_ptr,
+      config.NUM_GENES(),
+      config.GENE_SIZE()
+    );
     // Print out the gene targets
     std::cout << "Initial gene targets:" << std::endl;
     const auto & targets = fitness_model_gradient->targets;
@@ -990,19 +506,17 @@ void AagosWorld::InitFitnessEval() {
       const size_t gene_size = config.GENE_SIZE();
 
       // Grab reference to and reset organism's phenotype.
-      auto & phen = org.GetPhenotype();
+      auto& phen = org.GetPhenotype();
       phen.Reset();
-
       // Calculate fitness contribution of each gene independently.
       double fitness = 0.0;
-      const auto & gene_starts = org.GetGeneStarts();
+      const auto& gene_starts = org.GetGeneStarts();
       for (size_t gene_id = 0; gene_id < num_genes; ++gene_id) {
         emp_assert(gene_id < gene_starts.size());
         const size_t gene_start = gene_starts[gene_id];
 
         // NOTE - Following could be optimized. Currently roughed in to patch Aagos
         //        after breaking change in Empirical.
-        // TODO - test
         // Isolate gene by rotating to front and resizing
         emp::BitVector gene(org.GetBits().ROTATE(gene_start));
         gene.resize(gene_size);
@@ -1045,14 +559,6 @@ void AagosWorld::InitFitnessEval() {
         emp::BitVector gene(org.GetBits().ROTATE(gene_start));
         gene.resize(gene_size);
         const uint32_t gene_val = gene.GetUInt(0);
-        // uint32_t gene_val = org.GetBits().GetUInt(gene_start) & gene_mask;
-        // // const size_t tail_bits = num_bits - gene_start; // original?
-        // const size_t tail_bits = org.GetBits().GetSize() - gene_start; // fix?
-
-        // // If a gene runs off the end of the bitstring, loop around to the beginning.
-        // if (tail_bits < gene_size) {
-        //   gene_val |= (org.GetBits().GetUInt(0) << tail_bits) & gene_mask;
-        // }
         // Compute fitness contribution of this gene using nk landscape
         const double fitness_contribution = fitness_model_nk->GetLandscape().GetFitness(gene_id, gene_val);
         phen.gene_fitness_contributions[gene_id] = fitness_contribution;
@@ -1594,5 +1100,6 @@ void AagosWorld::DoConfigSnapshot() {
   }
 }
 
+}
 
 #endif

@@ -1,7 +1,8 @@
 #ifndef AAGOS_ORG_H
 #define AAGOS_ORG_H
 
-#include "emp/bits/BitVector.hpp"
+// #include "emp/bits/BitVector.hpp"
+#include "emp/bits/Bits.hpp"
 #include "emp/math/Random.hpp"
 #include "emp/math/random_utils.hpp"
 #include "emp/tools/string_utils.hpp"
@@ -9,6 +10,8 @@
 
 #include <algorithm>
 #include <unordered_map>
+
+namespace aagos {
 
 class AagosOrg {
 public:
@@ -271,6 +274,8 @@ void AagosOrg::NeighborCalc() {
       gene_neighbors[j] += (size_t)neighbors;
     }
   }
+}
+
 }
 
 #endif

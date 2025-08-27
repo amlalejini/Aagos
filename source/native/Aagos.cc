@@ -5,13 +5,12 @@
 #include "emp/config/command_line.hpp"
 
 #include "../AagosConfig.hpp"
-#include "../AagosOrg.hpp"
 #include "../AagosWorld.hpp"
 
 int main(int argc, char* argv[])
 {
   std::string config_fname = "Aagos.cfg";
-  AagosConfig config;
+  aagos::AagosConfig config;
   // Deal with loading config values via native interface (config file and command line args)
   config.Read(config_fname);
   auto args = emp::cl::ArgManager(argc, argv);
@@ -25,7 +24,7 @@ int main(int argc, char* argv[])
   config.Write(std::cout);
   std::cout << "==============================\n" << std::endl;
 
-  AagosWorld world(config);
+  aagos::AagosWorld world(config);
   world.Setup();
   world.Run();
 }
