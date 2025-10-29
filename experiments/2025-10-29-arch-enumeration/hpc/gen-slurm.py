@@ -84,7 +84,12 @@ architecture_files = [
 combos.add_val(
     "LOAD_ANCESTOR_FILE",
     [
-        "${REPO_DIR}/genome-architectures/num-genes_4__gene-size_4__genome-length_16" + fname
+        os.path.join(
+            "${REPO_DIR}",
+            "genome-architectures",
+            "num-genes_4__gene-size_4__genome-length_16",
+            fname
+        )
         for fname in architecture_files
     ]
 )
