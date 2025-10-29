@@ -21,7 +21,7 @@ REPO_DIR=<<REPO_DIR>>
 RUN_DIR=<<RUN_DIR>>
 
 # Load correct environment variables, modules, etc.
-source ${REPO_DIR}/hpc-env/clipper-hpc-env.sh
+<<SETUP_HPC_ENV>>
 
 mkdir -p ${RUN_DIR}
 cd ${RUN_DIR}
