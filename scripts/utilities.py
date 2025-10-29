@@ -34,3 +34,20 @@ def read_csv(file_path):
         )
     ]
     return lines
+
+def append_csv(output_path, out_lines, field_order):
+    lines = []
+    for info in out_lines:
+        line = ",".join([str(info[field]) for field in field_order])
+        lines.append(line)
+    out_content = "\n" + "\n".join(lines)
+    with open(output_path, "a") as fp:
+        fp.write(out_content)
+
+def write_csv(output_path:str, rows:list):
+    header = list(rows[0].keys())
+    header.sort()
+    lines = [ ",".join([str(row[field]) for field in header]) for row in rows ]
+    with open(output_path, "w") as fp:
+        fp.write(",".join(header) + "\n")
+        fp.write("\n".join(lines))
