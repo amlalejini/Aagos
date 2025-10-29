@@ -1,1 +1,2 @@
+networkx==3.5
 pyvarco==1.0.0
