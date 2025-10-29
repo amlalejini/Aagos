@@ -10,6 +10,7 @@ RUNS_PER_SUBDIR=950
 USERNAME=lalejini
 # HPC_ENV_FILE=clipper-hpc-env.sh
 HPC_ENV_FILE=msu-hpc-env.sh
+ACCOUNT=devolab
 
 REPO_DIR=/mnt/home/${USERNAME}/devo_ws/${PROJECT_NAME} # <-- CHANGE THIS to where ever you have this repository stored on your account
 REPO_SCRIPTS_DIR=${REPO_DIR}/scripts

@@ -10,6 +10,7 @@ RUNS_PER_SUBDIR=950
 USERNAME=lalejini
 # HPC_ENV_FILE=clipper-hpc-env.sh
 HPC_ENV_FILE=msu-hpc-env.sh
+ACCOUNT=devolab
 
 REPO_DIR=/Users/lalejina/devo_ws/${PROJECT_NAME}
 HOME_EXP_DIR=${REPO_DIR}/experiments/${EXP_SLUG}
