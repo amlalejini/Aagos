@@ -29,6 +29,7 @@ config_exclude = {
     "PRINT_INTERVAL",
     "SUMMARY_INTERVAL"
 }
+fitness_stats_exclude = {}
 gene_stats_exclude = {}
 rep_org_exclude = {
     f"site_cnt_{i}_gene_occupancy" for i in range(0, 128)
@@ -132,6 +133,19 @@ def main():
                 row_summary_info = {field:row[field] for field in row if (field not in rep_org_exclude) and (field not in info_by_update[row_update])}
                 info_by_update[row_update].update(
                     row_summary_info
+                )
+
+        ########################################
+        # Aggregate fitness content
+        ########################################
+        fitness_path = os.path.join(run_path, "output", "fitness.csv")
+        fitness_data = utils.read_csv(fitness_path)
+        # Filter data to just rows w/target updates and add to info by update
+        for row in fitness_data:
+            row_update = row["update"]
+            if row_update in updates:
+                info_by_update[row_update].update(
+                    {field:row[field] for field in row if (field not in fitness_stats_exclude) and (field not in info_by_update[row_update])}
                 )
 
         ########################################
