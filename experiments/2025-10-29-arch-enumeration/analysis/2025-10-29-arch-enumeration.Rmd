@@ -746,33 +746,21 @@ nk_model_summary_data %>%
 ```
 
 ```{r}
-data_gradient_bf3 <- filter(
-  gradient_model_summary_data,
-  BIT_FLIP_PROB == 0.3
-)
-data_gradient_bf03 <- filter(
-  gradient_model_summary_data,
-  BIT_FLIP_PROB == 0.03
-)
-data_gradient_bf003 <- filter(
-  gradient_model_summary_data,
-  BIT_FLIP_PROB == 0.003
-)
 cor.test(
-  x = data_gradient_bf003$coding_sites,
-  y = data_gradient_bf003$mean_fitness,
+  x = data_nk_bf003$coding_sites,
+  y = data_nk_bf003$mean_fitness,
   method = "spearman",
   exact = FALSE
 )
 cor.test(
-  x = data_gradient_bf03$coding_sites,
-  y = data_gradient_bf03$mean_fitness,
+  x = data_nk_bf03$coding_sites,
+  y = data_nk_bf03$mean_fitness,
   method = "spearman",
   exact = FALSE
 )
 cor.test(
-  x = data_gradient_bf3$coding_sites,
-  y = data_gradient_bf3$mean_fitness,
+  x = data_nk_bf3$coding_sites,
+  y = data_nk_bf3$mean_fitness,
   method = "spearman",
   exact = FALSE
 )
