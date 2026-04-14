@@ -2,8 +2,10 @@
 
 **A**uto-**A**daptive **G**enetic **O**rganization **S**ystem
 
-[![OSF](https://img.shields.io/badge/data%20%40%20OSF-10.17605%2FOSF.IO%2FWM659-blue)](https://osf.io/wm659/)
 [![web-model](https://img.shields.io/badge/go_to-interactive_web--based_model-purple)](https://lalejini.com/Aagos/web/Aagos.html)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19579298.svg)](https://doi.org/10.5281/zenodo.19579298)
+[![OSF](https://img.shields.io/badge/data%20%40%20OSF-10.17605%2FOSF.IO%2FWM659-blue)](https://osf.io/wm659/)
+
 
 ## Overview
 
