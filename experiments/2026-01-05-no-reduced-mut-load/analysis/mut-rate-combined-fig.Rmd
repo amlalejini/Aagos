@@ -1,0 +1,342 @@
+## Dependencies and setup
+
+```{r, message=FALSE}
+library(tidyverse)
+library(reshape2) # (Wickham, 2007)
+library(cowplot)  # (Wilke, 2019)
+library(hexbin)   # (Carr, Lewin-Kog, Maechler, and Sarkar, 2020)
+library(knitr)
+library(kableExtra)
+library(khroma)
+library(ggh4x)
+```
+
+We conducted these analyses using the following computing environment:
+
+```{r}
+print(version)
+```
+
+```{r}
+# Build relative path from R's working directory to what is actually the working
+# directory for this experiment.
+exp_directory <- "experiments"
+no_reduced_load_exp <- "2026-01-05-no-reduced-mut-load"
+no_reduced_load_dir <- paste(
+  exp_directory,
+  no_reduced_load_exp,
+  "analysis",
+  sep = "/"
+)
+mut_rate_gradient_exp <- "2025-12-22-mutation-rate-gradient"
+mut_rate_gradient_dir <- paste(
+  exp_directory,
+  mut_rate_gradient_exp,
+  "analysis",
+  sep = "/"
+)
+```
+
+```{r}
+# Use the cowplot theme as our default for ggplots
+theme_set(theme_cowplot())
+# Create directory to save plots
+plot_dir <- paste(
+  no_reduced_load_dir,
+  "plots",
+  sep = "/"
+)
+dir.create(
+  plot_dir,
+  showWarnings = FALSE
+)
+```
+
+## Load and preprocess data
+
+```{r}
+sig_thresh <- 0.5
+```
+
+```{r}
+no_load_summary_data_path <- paste(
+  no_reduced_load_dir,
+  "data",
+  "summary.csv",
+  sep = "/"
+)
+no_reduced_load_summary_data <- read_csv(no_load_summary_data_path)
+no_reduced_load_summary_data <- no_reduced_load_summary_data %>%
+  mutate(
+    BIT_FLIP_PROB = as.factor(BIT_FLIP_PROB),
+    DRIFT = TOURNAMENT_SIZE == 1,
+    APPLY_BIT_MUTS_PER_GENE = as.factor(APPLY_BIT_MUTS_PER_GENE)
+  ) %>%
+  mutate(
+    chg_rate_label = case_when(
+      DRIFT ~ "Drift",
+      CHANGE_MAGNITUDE == "0" ~ "Static",
+      CHANGE_FREQUENCY == "0" ~ "Static",
+      .default = paste(
+        CHANGE_MAGNITUDE,
+        CHANGE_FREQUENCY,
+        sep = "/"
+      )
+    )
+  ) %>%
+  mutate(
+    chg_rate_label = factor(
+      chg_rate_label,
+      levels = c(
+        "Drift",
+        "Static",
+        "1/1024",
+        "1/512",
+        "1/256",
+        "1/128",
+        "1/64",
+        "1/32",
+        "1/16",
+        "1/8",
+        "1/4",
+        "1/2",
+        "1/1",
+        "2/1",
+        "4/1",
+        "8/1",
+        "16/1",
+        "32/1",
+        "64/1",
+        "128/1",
+        "256/1",
+        "512/1",
+        "1024/1",
+        "2048/1",
+        "4096/1"
+      )
+    )
+  )
+
+phase0_no_reduced_load_summary_data <- no_reduced_load_summary_data %>%
+  filter(
+    evo_phase == 0 & update == 50000
+  )
+phase1_no_reduced_load_summary_data <- no_reduced_load_summary_data %>%
+  filter(evo_phase == 1 & update == 60000)
+```
+
+```{r}
+mut_grad_summary_data_path <- paste(
+  mut_rate_gradient_dir,
+  "data",
+  "summary.csv",
+  sep = "/"
+)
+mut_grad_summary_data <- read_csv(mut_grad_summary_data_path)
+mut_grad_summary_data <- mut_grad_summary_data %>%
+  mutate(
+    BIT_FLIP_PROB = as.factor(BIT_FLIP_PROB),
+    DRIFT = TOURNAMENT_SIZE == 1,
+    APPLY_BIT_MUTS_PER_GENE = as.factor(APPLY_BIT_MUTS_PER_GENE)
+  ) %>%
+  mutate(
+    chg_rate_label = case_when(
+      DRIFT ~ "Drift",
+      CHANGE_MAGNITUDE == "0" ~ "Static",
+      CHANGE_FREQUENCY == "0" ~ "Static",
+      .default = paste(
+        CHANGE_MAGNITUDE,
+        CHANGE_FREQUENCY,
+        sep = "/"
+      )
+    )
+  ) %>%
+  mutate(
+    chg_rate_label = factor(
+      chg_rate_label,
+      levels = c(
+        "Drift",
+        "Static",
+        "1/1024",
+        "1/512",
+        "1/256",
+        "1/128",
+        "1/64",
+        "1/32",
+        "1/16",
+        "1/8",
+        "1/4",
+        "1/2",
+        "1/1",
+        "2/1",
+        "4/1",
+        "8/1",
+        "16/1",
+        "32/1",
+        "64/1",
+        "128/1",
+        "256/1",
+        "512/1",
+        "1024/1",
+        "2048/1",
+        "4096/1"
+      )
+    )
+  )
+
+phase0_mut_grad_summary_data <- mut_grad_summary_data %>%
+  filter(
+    evo_phase == 0 & update == 50000
+  )
+phase1_mut_grad_summary_data <- mut_grad_summary_data %>%
+  filter(evo_phase == 1 & update == 60000)
+```
+
+## Manuscript
+
+```{r}
+mut_grad_plt <- phase0_mut_grad_summary_data %>%
+  filter(GRADIENT_MODEL == 1 & chg_rate_label == "Static") %>%
+  ggplot(
+    aes(
+      x = BIT_FLIP_PROB,
+      y = coding_sites
+    )
+  ) +
+  geom_boxplot() +
+  scale_y_continuous(
+    limits = c(0, 130),
+    breaks = seq(0, 130, 20)
+  ) +
+  labs(
+    # title = "Gradient Fitness Model",
+    x = "Mutation rate",
+    y = "Coding sites\n(in most fit genotype)"
+  ) +
+  theme(
+    legend.position = "none",
+    axis.title.y = element_text(
+      size = 12
+    ),
+    axis.text.y = element_text(
+      size = 10
+    ),
+    axis.title.x = element_text(size = 12),
+    axis.text.x = element_text(
+      size = 8
+    )
+  )
+mut_grad_plt
+```
+
+
+Coding sites, just static
+
+```{r}
+# bright <- color("bright")
+# bright(7)
+no_reduced_load_plt <- phase0_no_reduced_load_summary_data %>%
+  filter(GRADIENT_MODEL == 1 & chg_rate_label == "Static") %>%
+  mutate(
+    mutation_type = case_when(
+      APPLY_BIT_MUTS_PER_GENE == 1 ~ "Per-gene",
+      APPLY_BIT_MUTS_PER_GENE == 0 ~ "Per-site",
+      .default = "Unknown"
+    )
+  ) %>%
+  ggplot(
+    aes(
+      x = mutation_type,
+      y = coding_sites,
+      color = mutation_type
+    )
+  ) +
+  geom_boxplot() +
+  scale_y_continuous(
+    limits = c(0, 130),
+    breaks = seq(0, 130, 20)
+  ) +
+  scale_color_manual(values = c("#EE6677", "black")) +
+  facet_nested_wrap(~"Mutation rate" + BIT_FLIP_PROB, nrow = 1) +
+  labs(
+    # title = "Gradient Fitness Model",
+    x = "Bit mutation type",
+    y = "Coding sites\n(in most fit genotype)"
+  ) +
+  theme(
+    legend.position = "none",
+    axis.title.y = element_text(
+      size = 12
+    ),
+    axis.text.y = element_text(
+      size = 10
+    ),
+    axis.title.x = element_text(size = 12),
+    axis.text.x = element_text(
+      size = 8,
+      angle = 45,
+      hjust = 1
+    ),
+    strip.text.x = element_text(
+      size = 10
+    ),
+    panel.border = element_rect(
+      size = 1, colour = "gray", fill = NA
+    )
+  )
+
+no_reduced_load_plt
+
+# ggsave(
+#   file = paste(
+#     plot_dir,
+#     "grad_final_coding_sites_plt_manu.png",
+#     sep = "/"
+#   ),
+#   plot = grad_final_coding_sites_plt_manu,
+#   width = 7,
+#   height = 4,
+#   dpi = 600
+# )
+```
+
+Combined panel
+
+```{r}
+shared_theme <- theme(
+    strip.background = element_rect(
+      fill = "white",
+      colour = "black"
+      # linetype="dotted",
+      # size = 0.2,
+    ),
+    strip.text = element_text(size = 10),
+    axis.text.x = element_text(size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+  ) +
+  panel_border(color = "black", size = 0.8)
+
+plot_panel <- plot_grid(
+  mut_grad_plt +
+    shared_theme,
+  no_reduced_load_plt +
+    shared_theme,
+  labels = c("A)", "B)"),
+  nrow = 2,
+  ncol = 1
+)
+plot_panel
+
+save_plot(
+  filename = paste(
+    plot_dir,
+    "fig-mutation-rate.pdf",
+    sep = "/"
+  ),
+  plot = plot_panel,
+  base_width = 7,
+  base_height = 7,
+  dpi = 600
+)
+```

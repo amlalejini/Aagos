@@ -1,0 +1,738 @@
+## Dependencies and setup
+
+```{r, message=FALSE}
+library(tidyverse)
+library(reshape2) # (Wickham, 2007)
+library(cowplot)  # (Wilke, 2019)
+library(hexbin)   # (Carr, Lewin-Kog, Maechler, and Sarkar, 2020)
+library(knitr)
+library(kableExtra)
+```
+
+We conducted these analyses using the following computing environment:
+
+```{r}
+print(version)
+```
+
+```{r}
+# Build relative path from R's working directory to what is actually the working
+# directory for this experiment.
+experiment_slug <- "2025-12-18-env-chg-wider-gradient"
+working_directory <- paste(
+  "experiments",
+  experiment_slug,
+  "analysis",
+  sep = "/"
+)
+```
+
+```{r}
+# Use the cowplot theme as our default for ggplots
+theme_set(theme_cowplot())
+# Create directory to save plots
+plot_dir <- paste(
+  working_directory,
+  "plots",
+  sep = "/"
+)
+dir.create(
+  plot_dir,
+  showWarnings = FALSE
+)
+```
+
+## Load and preprocess data
+
+```{r}
+sig_thresh <- 0.5
+```
+
+```{r}
+summary_data_path <- paste(
+  working_directory,
+  "data",
+  "summary.csv",
+  sep = "/"
+)
+summary_data <- read_csv(summary_data_path)
+summary_data <- summary_data %>%
+  mutate(
+    BIT_FLIP_PROB = as.factor(BIT_FLIP_PROB),
+    DRIFT = TOURNAMENT_SIZE == 1
+  ) %>%
+  mutate(
+    chg_rate_label = case_when(
+      DRIFT ~ "Drift",
+      CHANGE_MAGNITUDE == "0" ~ "Static",
+      CHANGE_FREQUENCY == "0" ~ "Static",
+      .default = paste(
+        CHANGE_MAGNITUDE,
+        CHANGE_FREQUENCY,
+        sep = "/"
+      )
+    )
+  ) %>%
+  mutate(
+    chg_rate_label = factor(
+      chg_rate_label,
+      levels = c(
+        "Static",
+        "1/1024",
+        "1/512",
+        "1/256",
+        "1/128",
+        "1/64",
+        "1/32",
+        "1/16",
+        "1/8",
+        "1/4",
+        "1/2",
+        "1/1",
+        "2/1",
+        "4/1",
+        "8/1",
+        "16/1",
+        "32/1",
+        "64/1",
+        "128/1",
+        "256/1",
+        "512/1",
+        "1024/1",
+        "2048/1",
+        "4096/1",
+        "Drift"
+      )
+    )
+  )
+
+phase0_summary_data <- summary_data %>%
+  filter(
+    evo_phase == 0 & update == 50000
+  )
+phase1_summary_data <- summary_data %>%
+  filter(evo_phase == 1 & update == 60000)
+```
+
+## Evolution experiment
+
+We evolved populations for 50,000 generations under a range of environmental change rates.
+
+### Fitnesses
+
+Note issue with fitnesses for changing environments.
+
+#### Gradient Fitness Model
+
+```{r}
+grad_final_fitness_plt <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = chg_rate_label,
+      y = fitness,
+      color = chg_rate_label
+    )
+  ) +
+  geom_boxplot() +
+  labs(
+    title = "Gradient Fitness Model",
+    x = "Environmental Change",
+    y = "Fitness (of best organism)"
+  ) +
+  theme(legend.position = "none")
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_final_fitness_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_final_fitness_plt,
+  width = 10,
+  height = 10
+)
+```
+
+### Coding sites
+
+#### Gradient fitness model
+
+```{r}
+grad_final_coding_sites_plt <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = chg_rate_label,
+      y = coding_sites,
+      color = chg_rate_label
+    )
+  ) +
+  geom_boxplot() +
+  scale_y_continuous(
+    limits = c(0, 130),
+    breaks = seq(0, 130, 20)
+  ) +
+  labs(
+    title = "Gradient Fitness Model",
+    x = "Environmental Change",
+    y = "Coding sites (in best organism)"
+  ) +
+  theme(legend.position = "none")
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_final_coding_sites_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_final_coding_sites_plt,
+  width = 10,
+  height = 10
+)
+```
+
+Statistical comparison of coding sites across treatments.
+
+```{r}
+d <- filter(phase0_summary_data, GRADIENT_MODEL == 1)
+kt <- kruskal.test(
+  formula = coding_sites ~ chg_rate_label,
+  data = d
+)
+kt
+if (kt$p.value <= sig_thresh) {
+  wt <- pairwise.wilcox.test(
+    x = d$coding_sites,
+    g = d$chg_rate_label,
+    exact = FALSE,
+    p.adjust.method = "bonferroni"
+  )
+  wt
+  # stats_table <- kbl(wt) %>%
+  #   kable_styling(latex_options = "striped")
+  # save_kable(
+  #   extinction_table,
+  #   paste(
+  #     plot_dir,
+  #     "extinctions.pdf",
+  #     sep = "/"
+  #   )
+  # )
+}
+```
+
+TODO - Calculate effect sizes
+
+```{r}
+coding_sites_summary <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  group_by(chg_rate_label) %>%
+  summarize(
+    avg_coding_sites = mean(coding_sites),
+    median_coding_sites = median(coding_sites),
+    variance_coding_sites = var(coding_sites),
+    min_coding_sites = min(coding_sites),
+    max_coding_sites = max(coding_sites)
+  ) %>%
+  arrange(desc(median_coding_sites))
+
+# coding_sites_summary$min_coding_sites
+# coding_sites_summary$max_coding_sites
+```
+
+### Coding sites vs first-phase fitness
+
+Are more compact genomes less fit at the end of phase 1?
+
+```{r}
+coding_sites_vs_phase0_fitness_plt <- phase0_summary_data %>%
+  filter(
+    GRADIENT_MODEL == 1 & chg_rate_label == "Static"
+  ) %>%
+  ggplot(
+    aes(
+      x = coding_sites,
+      y = fitness
+    )
+  ) +
+  geom_point(alpha = 0.95) +
+  scale_x_continuous(
+    name = "Coding Sites",
+    limits = c(0, 130),
+    breaks = seq(0, 130, 20)
+  ) +
+  scale_fill_continuous(
+    type = "viridis",
+    trans = "log",
+    name = "Count",
+    breaks = c(1, 10, 100)
+  ) +
+  labs(
+    x = "Coding Sites",
+    y = "Phase 0 fitness"
+  )
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "coding_sites_vs_phase0_fitness_plt.pdf",
+    sep = "/"
+  ),
+  plot = coding_sites_vs_phase0_fitness_plt,
+  width = 10,
+  height = 10
+)
+```
+```{r}
+static_phase0 <- phase0_summary_data %>%
+  filter(
+    GRADIENT_MODEL == 1 & chg_rate_label == "Static"
+  )
+
+phase0_summary_data %>%
+  filter(
+    GRADIENT_MODEL == 1
+  ) %>%
+  group_by(chg_rate_label) %>%
+  summarize(
+    avg_fitness = mean(fitness),
+    min_fitness = min(fitness),
+    max_fitness = max(fitness)
+  ) %>%
+  arrange(desc(avg_fitness))
+```
+
+### Genome Length
+
+#### Gradient fitness model
+
+```{r}
+grad_final_genome_length_plt <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = chg_rate_label,
+      y = genome_length,
+      color = chg_rate_label
+    )
+  ) +
+  geom_boxplot() +
+  scale_y_continuous(
+    limits = c(0, 1025)
+  ) +
+  labs(
+    title = "Gradient Fitness Model",
+    x = "Environmental Change",
+    y = "Genome length (of best organism)"
+  ) +
+  theme(legend.position = "none")
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_final_genome_length_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_final_genome_length_plt,
+  width = 10,
+  height = 10
+)
+```
+
+Statistical comparison of coding sites across treatments.
+
+```{r}
+d <- filter(phase0_summary_data, GRADIENT_MODEL == 1)
+kt <- kruskal.test(
+  formula = genome_length ~ chg_rate_label,
+  data = d
+)
+kt
+if (kt$p.value <= sig_thresh) {
+  wt <- pairwise.wilcox.test(
+    x = d$genome_length,
+    g = d$chg_rate_label,
+    exact = FALSE,
+    p.adjust.method = "bonferroni"
+  )
+  wt
+}
+```
+
+
+### Neutral sites
+
+#### Gradient fitness model
+
+```{r}
+grad_final_neutral_sites_plt <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = chg_rate_label,
+      y = neutral_sites,
+      color = chg_rate_label
+    )
+  ) +
+  geom_boxplot() +
+  scale_y_continuous(
+    limits = c(0, 1025)
+  ) +
+  labs(
+    title = "Gradient Fitness Model",
+    x = "Environmental Change",
+    y = "Neutral sites (of best organism)"
+  ) +
+  theme(legend.position = "none")
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_final_neutral_sites_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_final_neutral_sites_plt,
+  width = 10,
+  height = 10
+)
+```
+
+```{r}
+d <- filter(phase0_summary_data, GRADIENT_MODEL == 1)
+kt <- kruskal.test(
+  formula = neutral_sites ~ chg_rate_label,
+  data = d
+)
+kt
+if (kt$p.value <= sig_thresh) {
+  wt <- pairwise.wilcox.test(
+    x = d$neutral_sites,
+    g = d$chg_rate_label,
+    exact = FALSE,
+    p.adjust.method = "bonferroni"
+  )
+  wt
+}
+```
+
+## Transfer experiments
+
+We lock down genetic architectures and evolve populations for an additional 10,000
+generations in a new (random) static environment.
+
+Are architectures evolved under changing environments more evolvable than those
+evolved under static environments?
+
+### Fitness
+
+#### Gradient fitness model
+
+```{r}
+grad_second_phase_fitness_plt <- phase1_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = chg_rate_label,
+      y = fitness,
+      color = chg_rate_label
+    )
+  ) +
+  geom_boxplot() +
+  labs(
+    title = "Gradient Fitness Model - Second experiment phase",
+    x = "Environmental Change",
+    y = "Final fitness (of best organism)"
+  ) +
+  theme(legend.position = "none")
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_second_phase_fitness_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_second_phase_fitness_plt,
+  width = 10,
+  height = 10
+)
+```
+
+```{r}
+d <- filter(phase1_summary_data, GRADIENT_MODEL == 1)
+kt <- kruskal.test(
+  formula = fitness ~ chg_rate_label,
+  data = d
+)
+kt
+if (kt$p.value <= sig_thresh) {
+  wt <- pairwise.wilcox.test(
+    x = d$fitness,
+    g = d$chg_rate_label,
+    exact = FALSE,
+    p.adjust.method = "bonferroni"
+  )
+  wt
+}
+```
+
+### Fitness vs. Number of coding sites
+
+#### Gradient fitness Model
+
+```{r}
+grad_second_phase_fitness_v_coding_plt <- phase1_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = coding_sites,
+      y = fitness,
+      color = chg_rate_label
+    )
+  ) +
+  geom_point() +
+  labs(
+    title = "Gradient Fitness Model - Second experiment phase",
+    x = "Coding sites",
+    y = "Fitness"
+  ) +
+  theme(legend.position = "none")
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_second_phase_fitness_v_coding_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_second_phase_fitness_v_coding_plt,
+  width = 10,
+  height = 10
+)
+```
+
+```{r}
+cor_data <- phase1_summary_data %>%
+  filter(GRADIENT_MODEL == 1)
+cor.test(
+  x = cor_data$coding_sites,
+  y = cor_data$fitness,
+  method = "spearman",
+  exact = FALSE
+)
+```
+
+## Publication figures
+
+### Changing environments promote modularity
+
+```{r}
+
+static_median <- median(
+  filter(
+    phase0_summary_data,
+    GRADIENT_MODEL == 1 & chg_rate_label == "Static"
+  )$coding_sites
+)
+chg_env_promote_modularity_plt <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = chg_rate_label,
+      y = coding_sites
+    )
+  ) +
+  geom_boxplot(
+    # width = 0.1
+    # outlier.shape = NA,
+    # alpha = 0.5
+  ) +
+  # geom_point(
+  #   position = position_jitter(width = .15),
+  #   size = .5,
+  #   alpha = 0.8
+  # ) +
+  geom_hline(
+    yintercept = static_median,
+    linetype = "dashed",
+    color = "gray",
+    alpha = 0.9
+  ) +
+  labs(
+    x = "Environmental Change",
+    y = "Coding Sites\n(in most fit genotype)"
+  ) +
+  scale_y_continuous(
+    limits = c(0, 130),
+    breaks = seq(0, 130, 20)
+  ) +
+  theme(
+    legend.position = "none",
+    axis.title.y = element_text(
+      size = 12
+    ),
+    axis.text.y = element_text(
+      size = 10
+    ),
+    axis.title.x = element_text(size = 12),
+    axis.text.x = element_text(size = 8)
+  )
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "chg_env_promote_modularity_plt.png",
+    sep = "/"
+  ),
+  plot = chg_env_promote_modularity_plt,
+  width = 8,
+  height = 4,
+  dpi = 600
+)
+```
+
+### Modularity promotes evolvability
+
+```{r}
+modularity_promote_evolvability_plt <- phase1_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = chg_rate_label,
+      y = fitness
+    )
+  ) +
+  geom_boxplot(
+    # width = 0.1
+    # outlier.shape = NA,
+    # alpha = 0.5
+  ) +
+  # geom_point(
+  #   position = position_jitter(width = .15),
+  #   size = .5,
+  #   alpha = 0.8
+  # ) +
+  labs(
+    x = "Original environment (pre-transfer)",
+    y = "Fitness achieved\nafter environment transfer"
+  ) +
+  theme(
+    legend.position = "none",
+    axis.title.y = element_text(
+      size = 12
+    ),
+    axis.text.y = element_text(
+      size = 10
+    ),
+    axis.title.x = element_text(size = 12),
+    axis.text.x = element_text(
+      size = 8,
+      angle = 30,
+      hjust = 1
+    )
+  )
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "modularity_promote_evolvability_plt.png",
+    sep = "/"
+  ),
+  plot = modularity_promote_evolvability_plt,
+  width = 7,
+  height = 4,
+  dpi = 600
+)
+```
+
+```{r}
+coding_sites_vs_fitness_manuscript_plt <- phase1_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = coding_sites,
+      y = fitness
+    )
+  ) +
+  geom_hex(alpha = 0.95) +
+  scale_x_continuous(
+    name = "Coding Sites",
+    limits = c(0, 130),
+    breaks = seq(0, 130, 20)
+  ) +
+  scale_fill_continuous(
+    type = "viridis",
+    trans = "log",
+    name = "Count",
+    breaks = c(1, 10, 100)
+  ) +
+  labs(
+    x = "Coding Sites",
+    y = "Fitness achieved\nafter environment transfer"
+  ) +
+  theme(
+    legend.position = "right",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12),
+    axis.title.y = element_text(size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.title.x = element_text(size = 12),
+    axis.text.x = element_text(size = 8)
+  )
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "coding_sites_vs_fitness_manuscript_plt.png",
+    sep = "/"
+  ),
+  plot = coding_sites_vs_fitness_manuscript_plt,
+  width = 7,
+  height = 4,
+  dpi = 600
+)
+```
+
+Combined
+
+```{r}
+y_lims <- c(8, 16.2)
+plt_grid <- plot_grid(
+  modularity_promote_evolvability_plt +
+    scale_y_continuous(limits = y_lims) +
+    theme(
+      legend.position = "none",
+      axis.title.y = element_text(size = 10),
+      axis.text.y = element_text(size = 8),
+      axis.title.x = element_text(size = 10),
+      axis.text.x = element_text(size = 8, angle = 30, hjust = 1)
+    ),
+  coding_sites_vs_fitness_manuscript_plt +
+    scale_y_continuous(limits = y_lims) +
+    theme(
+      legend.position = "right",
+      legend.title = element_text(size = 10),
+      legend.text = element_text(size = 8),
+      axis.title.y = element_text(size = 10),
+      axis.text.y = element_text(size = 8),
+      axis.title.x = element_text(size = 10),
+      axis.text.x = element_text(size = 8)
+    ),
+  nrow = 1,
+  ncol = 2,
+  align = "h",
+  labels = c("A)", "B)"),
+  rel_widths = c(0.6, 0.4)
+)
+# plt_grid
+save_plot(
+  filename = paste(
+    plot_dir,
+    "modularity-promotes-evolvability-fig.pdf",
+    sep = "/"
+  ),
+  plot = plt_grid,
+  base_width = 8,
+  base_height = 3,
+  dpi = 600
+)
+```

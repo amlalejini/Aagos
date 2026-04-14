@@ -1,0 +1,289 @@
+## Dependencies and setup
+
+```{r, message=FALSE}
+library(tidyverse)
+library(reshape2) # (Wickham, 2007)
+library(cowplot)  # (Wilke, 2019)
+library(hexbin)   # (Carr, Lewin-Kog, Maechler, and Sarkar, 2020)
+library(knitr)
+library(kableExtra)
+library(khroma)
+```
+
+We conducted these analyses using the following computing environment:
+
+```{r}
+print(version)
+```
+
+```{r}
+# Build relative path from R's working directory to what is actually the working
+# directory for this experiment.
+experiment_slug <- "2026-01-06-env-chg-and-mutation"
+working_directory <- paste(
+  "experiments",
+  experiment_slug,
+  "analysis",
+  sep = "/"
+)
+```
+
+```{r}
+# Use the cowplot theme as our default for ggplots
+theme_set(theme_cowplot())
+# Create directory to save plots
+plot_dir <- paste(
+  working_directory,
+  "plots",
+  sep = "/"
+)
+dir.create(
+  plot_dir,
+  showWarnings = FALSE
+)
+```
+
+## Load and preprocess data
+
+```{r}
+sig_thresh <- 0.5
+```
+
+```{r}
+summary_data_path <- paste(
+  working_directory,
+  "data",
+  "summary.csv",
+  sep = "/"
+)
+summary_data <- read_csv(summary_data_path)
+summary_data <- summary_data %>%
+  mutate(
+    BIT_FLIP_PROB = as.factor(BIT_FLIP_PROB),
+    DRIFT = TOURNAMENT_SIZE == 1
+  ) %>%
+  mutate(
+    chg_rate_label = case_when(
+      DRIFT ~ "Drift",
+      CHANGE_MAGNITUDE == "0" ~ "Static",
+      CHANGE_FREQUENCY == "0" ~ "Static",
+      .default = paste(
+        CHANGE_MAGNITUDE,
+        CHANGE_FREQUENCY,
+        sep = "/"
+      )
+    )
+  ) %>%
+  mutate(
+    chg_rate_label = factor(
+      chg_rate_label,
+      levels = c(
+        "Static",
+        "1/1024",
+        "1/512",
+        "1/256",
+        "1/128",
+        "1/64",
+        "1/32",
+        "1/16",
+        "1/8",
+        "1/4",
+        "1/2",
+        "1/1",
+        "2/1",
+        "4/1",
+        "8/1",
+        "16/1",
+        "32/1",
+        "64/1",
+        "128/1",
+        "256/1",
+        "512/1",
+        "1024/1",
+        "2048/1",
+        "4096/1",
+        "Drift"
+      )
+    )
+  )
+
+phase0_summary_data <- summary_data %>%
+  filter(
+    evo_phase == 0 & update == 50000
+  )
+```
+
+## Evolution experiment
+
+We evolved populations for 50,000 generations under a range of environmental change rates.
+
+### Fitnesses
+
+Note issue with fitnesses for changing environments.
+
+#### Gradient Fitness Model
+
+```{r}
+grad_final_fitness_plt <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = BIT_FLIP_PROB,
+      y = fitness,
+      color = chg_rate_label
+    )
+  ) +
+  geom_boxplot(
+    position = "dodge"
+  ) +
+  labs(
+    title = "Gradient Fitness Model",
+    x = "Mutation rate",
+    y = "Fitness (of best organism)"
+  ) +
+  facet_wrap(~chg_rate_label) +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    )
+  )
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_final_fitness_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_final_fitness_plt,
+  width = 20,
+  height = 20
+)
+```
+
+### Coding sites
+
+#### Gradient fitness model
+
+```{r}
+grad_final_coding_sites_plt <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = BIT_FLIP_PROB,
+      y = coding_sites,
+      color = chg_rate_label
+    )
+  ) +
+  geom_boxplot(
+    position = "dodge"
+  ) +
+  scale_y_continuous(
+    limits = c(0, 130),
+    breaks = seq(0, 130, 20)
+  ) +
+  labs(
+    title = "Gradient Fitness Model",
+    x = "Mutation rate",
+    y = "Coding sites (in best organism)"
+  ) +
+  facet_wrap(~chg_rate_label) +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    )
+  )
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_final_coding_sites_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_final_coding_sites_plt,
+  width = 20,
+  height = 20
+)
+```
+
+## Manuscript
+
+
+
+```{r}
+coding_sites_summary <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  group_by(
+    BIT_FLIP_PROB,
+    chg_rate_label
+  ) %>%
+  summarize(
+    median_coding_sites = median(coding_sites)
+  )
+
+grad_chg_rate_vs_mut_plt_manu <- coding_sites_summary %>%
+  ggplot(
+    aes(
+      x = BIT_FLIP_PROB,
+      y = chg_rate_label,
+      fill = median_coding_sites
+    )
+  ) +
+  geom_tile() +
+  scale_fill_lajolla(
+    reverse = TRUE
+  ) +
+  labs(
+    x = "Mutation rate",
+    y = "Environmental change",
+    fill = "Coding sites"
+  ) +
+  theme(
+    legend.position = "right",
+    axis.title.y = element_text(size = 14),
+    axis.text.y = element_text(size = 11),
+    axis.title.x = element_text(size = 14),
+    axis.text.x = element_text(size = 11)
+  )
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_chg_rate_vs_mut_plt_manu.pdf",
+    sep = "/"
+  ),
+  plot = grad_chg_rate_vs_mut_plt_manu,
+  width = 8,
+  height = 7,
+  dpi = 600
+)
+```
+
+```{r}
+# interaction <- aov(
+#   coding_sites ~ BIT_FLIP_PROB * chg_rate_label,
+#   data = filter(phase0_summary_data, GRADIENT_MODEL == 1)
+# )
+
+d <- phase0_summary_data %>% filter(GRADIENT_MODEL == 1)
+mod_chg <- lm(coding_sites ~ chg_rate_label, data = d)
+mod_mut <- lm(coding_sites ~ BIT_FLIP_PROB, data = d)
+mod_chgxmut <- lm(coding_sites ~ chg_rate_label * BIT_FLIP_PROB, data = d)
+mod_chg_and_mut <- lm(coding_sites ~ chg_rate_label + BIT_FLIP_PROB, data = d)
+anova(
+  mod_chgxmut,
+  mod_chg_and_mut
+)
+```
+
+<!-- ```{r}
+cor_data <- phase1_summary_data %>%
+  filter(GRADIENT_MODEL == 1)
+cor.test(
+  x = cor_data$coding_sites,
+  y = cor_data$fitness,
+  method = "spearman",
+  exact = FALSE
+)
+``` -->

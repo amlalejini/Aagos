@@ -1,0 +1,467 @@
+## Dependencies and setup
+
+```{r, message=FALSE}
+library(tidyverse)
+library(reshape2) # (Wickham, 2007)
+library(cowplot)  # (Wilke, 2019)
+library(hexbin)   # (Carr, Lewin-Kog, Maechler, and Sarkar, 2020)
+library(knitr)
+library(kableExtra)
+```
+
+We conducted these analyses using the following computing environment:
+
+```{r}
+print(version)
+```
+
+```{r}
+# Build relative path from R's working directory to what is actually the working
+# directory for this experiment.
+experiment_slug <- "2025-12-22-mutation-rate-gradient"
+working_directory <- paste(
+  "experiments",
+  experiment_slug,
+  "analysis",
+  sep = "/"
+)
+```
+
+```{r}
+# Use the cowplot theme as our default for ggplots
+theme_set(theme_cowplot())
+# Create directory to save plots
+plot_dir <- paste(
+  working_directory,
+  "plots",
+  sep = "/"
+)
+dir.create(
+  plot_dir,
+  showWarnings = FALSE
+)
+```
+
+## Load and preprocess data
+
+```{r}
+sig_thresh <- 0.5
+```
+
+```{r}
+summary_data_path <- paste(
+  working_directory,
+  "data",
+  "summary.csv",
+  sep = "/"
+)
+summary_data <- read_csv(summary_data_path)
+summary_data <- summary_data %>%
+  mutate(
+    BIT_FLIP_PROB = as.factor(BIT_FLIP_PROB),
+    DRIFT = TOURNAMENT_SIZE == 1
+  ) %>%
+  mutate(
+    chg_rate_label = case_when(
+      DRIFT ~ "Drift",
+      CHANGE_MAGNITUDE == "0" ~ "Static",
+      CHANGE_FREQUENCY == "0" ~ "Static",
+      .default = paste(
+        CHANGE_MAGNITUDE,
+        CHANGE_FREQUENCY,
+        sep = "/"
+      )
+    )
+  ) %>%
+  mutate(
+    chg_rate_label = factor(
+      chg_rate_label,
+      levels = c(
+        "Static",
+        "1/1024",
+        "1/512",
+        "1/256",
+        "1/128",
+        "1/64",
+        "1/32",
+        "1/16",
+        "1/8",
+        "1/4",
+        "1/2",
+        "1/1",
+        "2/1",
+        "4/1",
+        "8/1",
+        "16/1",
+        "32/1",
+        "64/1",
+        "128/1",
+        "256/1",
+        "512/1",
+        "1024/1",
+        "2048/1",
+        "4096/1",
+        "Drift"
+      )
+    )
+  )
+
+phase0_summary_data <- summary_data %>%
+  filter(
+    evo_phase == 0 & update == 50000
+  )
+phase1_summary_data <- summary_data %>%
+  filter(evo_phase == 1 & update == 60000)
+```
+
+## Evolution experiment
+
+We evolved populations for 50,000 generations under a range of environmental change rates.
+
+### Fitnesses
+
+Note issue with fitnesses for changing environments.
+
+#### Gradient Fitness Model
+
+```{r}
+grad_final_fitness_plt <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = BIT_FLIP_PROB,
+      y = fitness,
+      color = chg_rate_label
+    )
+  ) +
+  geom_boxplot(
+    position = "dodge"
+  ) +
+  labs(
+    title = "Gradient Fitness Model",
+    x = "Mutation rate",
+    y = "Fitness (of best organism)"
+  ) +
+  theme()
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_final_fitness_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_final_fitness_plt,
+  width = 10,
+  height = 10
+)
+```
+
+### Coding sites
+
+#### Gradient fitness model
+
+```{r}
+grad_final_coding_sites_plt <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = BIT_FLIP_PROB,
+      y = coding_sites,
+      color = chg_rate_label
+    )
+  ) +
+  geom_boxplot(
+    position = "dodge"
+  ) +
+  scale_y_continuous(
+    limits = c(0, 130),
+    breaks = seq(0, 130, 20)
+  ) +
+  labs(
+    title = "Gradient Fitness Model",
+    x = "Mutation rate",
+    y = "Coding sites (in best organism)"
+  ) +
+  theme()
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_final_coding_sites_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_final_coding_sites_plt,
+  width = 10,
+  height = 10
+)
+```
+
+### Genome Length
+
+#### Gradient fitness model
+
+```{r}
+grad_final_genome_length_plt <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = BIT_FLIP_PROB,
+      y = genome_length,
+      color = chg_rate_label
+    )
+  ) +
+  geom_boxplot(
+    position = "dodge"
+  ) +
+  scale_y_continuous(
+    limits = c(0, 1025)
+  ) +
+  labs(
+    title = "Gradient Fitness Model",
+    x = "Mutation rate",
+    y = "Genome length (of best organism)"
+  ) +
+  theme(legend.position = "none")
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_final_genome_length_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_final_genome_length_plt,
+  width = 10,
+  height = 10
+)
+```
+
+
+### Neutral sites
+
+#### Gradient fitness model
+
+```{r}
+grad_final_neutral_sites_plt <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = BIT_FLIP_PROB,
+      y = neutral_sites,
+      color = chg_rate_label
+    )
+  ) +
+  geom_boxplot() +
+  scale_y_continuous(
+    limits = c(0, 1025)
+  ) +
+  labs(
+    title = "Gradient Fitness Model",
+    x = "Mutation rate",
+    y = "Neutral sites (of best organism)"
+  ) +
+  theme()
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_final_neutral_sites_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_final_neutral_sites_plt,
+  width = 10,
+  height = 10
+)
+```
+
+## Transfer experiments
+
+We lock down genetic architectures and evolve populations for an additional 10,000
+generations in a new (random) static environment.
+
+Are architectures evolved under changing environments more evolvable than those
+evolved under static environments?
+
+### Fitness
+
+#### Gradient fitness model
+
+```{r}
+grad_second_phase_fitness_plt <- phase1_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = BIT_FLIP_PROB,
+      y = fitness,
+      color = chg_rate_label
+    )
+  ) +
+  geom_boxplot(position="dodge") +
+  labs(
+    title = "Gradient Fitness Model - Second experiment phase",
+    x = "Mutation rate",
+    y = "Final fitness (of best organism)"
+  ) +
+  theme(legend.position = "none")
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_second_phase_fitness_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_second_phase_fitness_plt,
+  width = 10,
+  height = 10
+)
+```
+
+### Fitness vs. Number of coding sites
+
+#### Gradient fitness Model
+
+```{r}
+grad_second_phase_fitness_v_coding_plt <- phase1_summary_data %>%
+  filter(GRADIENT_MODEL == 1) %>%
+  ggplot(
+    aes(
+      x = coding_sites,
+      y = fitness,
+      color = BIT_FLIP_PROB
+    )
+  ) +
+  geom_point() +
+  labs(
+    title = "Gradient Fitness Model - Second experiment phase",
+    x = "Coding sites",
+    y = "Fitness"
+  ) +
+  theme(legend.position = "none")
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_second_phase_fitness_v_coding_plt.pdf",
+    sep = "/"
+  ),
+  plot = grad_second_phase_fitness_v_coding_plt,
+  width = 10,
+  height = 10
+)
+```
+
+## Manuscript
+
+Coding sites, just static
+
+```{r}
+grad_final_coding_sites_plt_manu <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1 & chg_rate_label == "Static") %>%
+  ggplot(
+    aes(
+      x = BIT_FLIP_PROB,
+      y = coding_sites
+    )
+  ) +
+  geom_boxplot(
+    position = "dodge"
+  ) +
+  scale_y_continuous(
+    limits = c(0, 130),
+    breaks = seq(0, 130, 20)
+  ) +
+  labs(
+    # title = "Gradient Fitness Model",
+    x = "Mutation rate",
+    y = "Coding sites\n(in most fit genotype)"
+  ) +
+  theme(
+    legend.position = "none",
+    axis.title.y = element_text(
+      size = 12
+    ),
+    axis.text.y = element_text(
+      size = 10
+    ),
+    axis.title.x = element_text(size = 12),
+    axis.text.x = element_text(
+      size = 8
+    )
+  )
+
+ggsave(
+  file = paste(
+    plot_dir,
+    "grad_final_coding_sites_plt_manu.png",
+    sep = "/"
+  ),
+  plot = grad_final_coding_sites_plt_manu,
+  width = 7,
+  height = 4,
+  dpi = 600
+)
+```
+
+```{r}
+d <- filter(
+  phase0_summary_data,
+  GRADIENT_MODEL == 1 & chg_rate_label == "Static"
+)
+kt <- kruskal.test(
+  formula = coding_sites ~ BIT_FLIP_PROB,
+  data = d
+)
+kt
+if (kt$p.value <= sig_thresh) {
+  wt <- pairwise.wilcox.test(
+    x = d$coding_sites,
+    g = d$BIT_FLIP_PROB,
+    exact = FALSE,
+    p.adjust.method = "bonferroni"
+  )
+  wt
+}
+```
+
+Fitness of static
+
+```{r}
+fitness_summary <- phase0_summary_data %>%
+  filter(GRADIENT_MODEL == 1 & chg_rate_label == "Static") %>%
+  group_by(
+    BIT_FLIP_PROB
+  ) %>%
+  summarize(
+    avg_fitness = mean(fitness),
+    median_fitness = median(fitness),
+    variance_fitness = var(fitness),
+    min_fitness = min(fitness),
+    max_fitness = max(fitness)
+  ) %>%
+  arrange(desc(median_fitness))
+
+# coding_sites_summary$min_coding_sites
+# coding_sites_summary$max_coding_sites
+```
+
+```{r}
+d <- filter(
+  phase0_summary_data,
+  GRADIENT_MODEL == 1 & chg_rate_label == "Drift"
+)
+kt <- kruskal.test(
+  formula = coding_sites ~ BIT_FLIP_PROB,
+  data = d
+)
+kt
+```
+
+<!-- ```{r}
+cor_data <- phase1_summary_data %>%
+  filter(GRADIENT_MODEL == 1)
+cor.test(
+  x = cor_data$coding_sites,
+  y = cor_data$fitness,
+  method = "spearman",
+  exact = FALSE
+)
+``` -->
